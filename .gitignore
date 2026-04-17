@@ -63,3 +63,4 @@ test_*.csv
 random_forest_model.pkl
 test_dataset.csv
 test_dataset_for_analysis.csv
+*.har

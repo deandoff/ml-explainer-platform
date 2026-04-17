@@ -165,9 +165,9 @@ const AnalysisPage: React.FC = () => {
               },
             ]}
             layout={{
-              title: `${explainerType.toUpperCase()} Feature Importance`,
-              xaxis: { title: 'Importance' },
-              yaxis: { title: 'Features' },
+              title: { text: `${explainerType.toUpperCase()} Feature Importance` },
+              xaxis: { title: { text: 'Importance' } },
+              yaxis: { title: { text: 'Features' } },
               height: 400,
               margin: { l: 150 },
             }}
