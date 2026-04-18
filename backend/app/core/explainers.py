@@ -54,15 +54,54 @@ class SHAPExplainer:
         if isinstance(shap_values, list):
             shap_values = shap_values[0]
 
-        feature_importance = {
-            feature: float(value)
-            for feature, value in zip(instance.columns, shap_values[0])
-        }
+        # Ensure shap_values is numpy array
+        if not isinstance(shap_values, np.ndarray):
+            shap_values = np.array(shap_values)
+
+        # Flatten to 1D if needed
+        shap_values_flat = shap_values.flatten()
+
+        # Extract feature importance safely
+        feature_importance = {}
+        for i, feature in enumerate(instance.columns):
+            if i < len(shap_values_flat):
+                value = shap_values_flat[i]
+                # Convert to Python float - handle all numpy types
+                if isinstance(value, np.ndarray):
+                    if value.size == 1:
+                        feature_importance[feature] = float(value.flat[0])
+                    else:
+                        feature_importance[feature] = float(value[0])
+                elif hasattr(value, 'item'):
+                    feature_importance[feature] = value.item()
+                else:
+                    feature_importance[feature] = float(value)
+
+        # Get base value
+        if hasattr(self.explainer, 'expected_value'):
+            base_value = self.explainer.expected_value
+            # Handle list case for multi-class
+            if isinstance(base_value, (list, np.ndarray)):
+                if len(base_value) > 0:
+                    base_value = base_value[0]
+                    if hasattr(base_value, 'item'):
+                        base_value = base_value.item()
+                    else:
+                        base_value = float(base_value)
+                else:
+                    base_value = 0.0
+            else:
+                if hasattr(base_value, 'item'):
+                    base_value = base_value.item()
+                else:
+                    base_value = float(base_value)
+        else:
+            base_value = 0.0
 
         return {
             "shap_values": shap_values.tolist(),
             "feature_importance": feature_importance,
-            "base_value": float(self.explainer.expected_value) if hasattr(self.explainer, 'expected_value') else 0.0,
+            "base_value": base_value,
             "feature_names": instance.columns.tolist()
         }
 
@@ -83,13 +122,31 @@ class SHAPExplainer:
         if isinstance(shap_values, list):
             shap_values = shap_values[0]
 
+        # Ensure shap_values is 2D
+        if isinstance(shap_values, np.ndarray):
+            if len(shap_values.shape) == 1:
+                shap_values = shap_values.reshape(1, -1)
+
         # Calculate mean absolute SHAP values
         mean_shap = np.abs(shap_values).mean(axis=0)
 
-        feature_importance = {
-            feature: float(value)
-            for feature, value in zip(data.columns, mean_shap)
-        }
+        # Flatten if needed
+        if isinstance(mean_shap, np.ndarray) and mean_shap.ndim > 1:
+            mean_shap = mean_shap.flatten()
+
+        # Convert to Python float explicitly
+        feature_importance = {}
+        for i, feature in enumerate(data.columns):
+            # Extract scalar value safely
+            if isinstance(mean_shap, np.ndarray):
+                value = mean_shap[i]
+                # Convert numpy scalar to Python float
+                if hasattr(value, 'item'):
+                    feature_importance[feature] = value.item()
+                else:
+                    feature_importance[feature] = float(value)
+            else:
+                feature_importance[feature] = float(mean_shap)
 
         # Sort by importance
         sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)

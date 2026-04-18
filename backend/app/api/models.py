@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
+from uuid import UUID
 from app.core.database import get_db
+from app.core.auth import get_current_user_id
 from app.models.models import Model as ModelDB, ModelStatus
 from app.schemas.schemas import ModelCreate, ModelResponse, PresignedUrlResponse
 from app.services.storage import storage_service
@@ -13,13 +15,15 @@ router = APIRouter()
 @router.post("/upload-url", response_model=PresignedUrlResponse)
 async def get_upload_url(
     model_type: str,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """Generate presigned URL for model upload"""
     try:
+        # Include user_id in storage path for isolation
         upload_url, s3_key = storage_service.generate_presigned_upload_url(
             file_type="application/octet-stream",
-            prefix=f"artifacts/models"
+            prefix=f"artifacts/models/{current_user_id}"
         )
 
         # For local storage, return API endpoint instead of file path
@@ -49,6 +53,7 @@ async def upload_file_direct(s3_key: str, file: UploadFile = File(...)):
 @router.post("/", response_model=ModelResponse)
 async def create_model(
     model: ModelCreate,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """Create model record after successful upload"""
@@ -57,6 +62,7 @@ async def create_model(
         file_size = storage_service.get_file_size(s3_key)
 
         db_model = ModelDB(
+            user_id=current_user_id,
             name=model.name,
             description=model.description,
             model_type=model.model_type,
@@ -79,20 +85,27 @@ async def create_model(
 async def list_models(
     skip: int = 0,
     limit: int = 100,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """List all models"""
-    models = db.query(ModelDB).offset(skip).limit(limit).all()
+    """List all models for current user"""
+    models = db.query(ModelDB).filter(
+        ModelDB.user_id == current_user_id
+    ).offset(skip).limit(limit).all()
     return models
 
 
 @router.get("/{model_id}", response_model=ModelResponse)
 async def get_model(
-    model_id: int,
+    model_id: UUID,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Get model by ID"""
-    model = db.query(ModelDB).filter(ModelDB.id == model_id).first()
+    """Get model by ID (only if owned by current user)"""
+    model = db.query(ModelDB).filter(
+        ModelDB.id == model_id,
+        ModelDB.user_id == current_user_id
+    ).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
     return model
@@ -100,13 +113,17 @@ async def get_model(
 
 @router.delete("/{model_id}")
 async def delete_model(
-    model_id: int,
+    model_id: UUID,
+    current_user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Delete model"""
+    """Delete model (only if owned by current user)"""
     from app.models.models import Analysis
 
-    model = db.query(ModelDB).filter(ModelDB.id == model_id).first()
+    model = db.query(ModelDB).filter(
+        ModelDB.id == model_id,
+        ModelDB.user_id == current_user_id
+    ).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 

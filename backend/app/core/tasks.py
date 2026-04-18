@@ -16,7 +16,8 @@ def run_shap_analysis(
     model_s3_key: str,
     dataset_s3_key: str,
     model_type: str,
-    analysis_id: int
+    analysis_id: str,
+    user_id: str = None
 ) -> Dict[str, Any]:
     """
     Run SHAP analysis on model and dataset
@@ -25,7 +26,8 @@ def run_shap_analysis(
         model_s3_key: S3 key for model file
         dataset_s3_key: S3 key for dataset file
         model_type: Type of ML model
-        analysis_id: Analysis record ID
+        analysis_id: Analysis record ID (UUID string)
+        user_id: User ID for storage path isolation
 
     Returns:
         Dictionary with SHAP results
@@ -57,17 +59,30 @@ def run_shap_analysis(
         self.update_state(state='PROGRESS', meta={'status': 'Computing SHAP values'})
 
         # Compute global importance
-        global_importance = explainer.explain_global(data, max_samples=100)
+        try:
+            global_importance = explainer.explain_global(data, max_samples=100)
+        except Exception as e:
+            print(f"Error in explain_global: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
         # Compute explanations for first few instances
         instance_explanations = []
         for idx in range(min(5, len(data))):
-            instance = data.iloc[[idx]]
-            explanation = explainer.explain_instance(instance)
-            instance_explanations.append({
-                'index': idx,
-                'explanation': explanation
-            })
+            try:
+                instance = data.iloc[[idx]]
+                explanation = explainer.explain_instance(instance)
+                instance_explanations.append({
+                    'index': idx,
+                    'explanation': explanation
+                })
+            except Exception as e:
+                print(f"Error explaining instance {idx}: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue with other instances
+                continue
 
         # Prepare results
         results = {
@@ -77,8 +92,12 @@ def run_shap_analysis(
             'num_features': len(data.columns)
         }
 
-        # Save results to storage
-        result_s3_key = f"cache/results/shap_{analysis_id}.json"
+        # Save results to storage with user_id in path
+        if user_id:
+            result_s3_key = f"artifacts/analyses/{user_id}/shap_{analysis_id}.json"
+        else:
+            result_s3_key = f"artifacts/analyses/shap_{analysis_id}.json"
+
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as result_file:
             json.dump(results, result_file)
             result_file.flush()
@@ -104,7 +123,8 @@ def run_lime_analysis(
     model_s3_key: str,
     dataset_s3_key: str,
     model_type: str,
-    analysis_id: int
+    analysis_id: str,
+    user_id: str = None
 ) -> Dict[str, Any]:
     """
     Run LIME analysis on model and dataset
@@ -113,7 +133,8 @@ def run_lime_analysis(
         model_s3_key: S3 key for model file
         dataset_s3_key: S3 key for dataset file
         model_type: Type of ML model
-        analysis_id: Analysis record ID
+        analysis_id: Analysis record ID (UUID string)
+        user_id: User ID for storage path isolation
 
     Returns:
         Dictionary with LIME results
@@ -161,8 +182,12 @@ def run_lime_analysis(
             'num_features': len(data.columns)
         }
 
-        # Save results to storage
-        result_s3_key = f"cache/results/lime_{analysis_id}.json"
+        # Save results to storage with user_id in path
+        if user_id:
+            result_s3_key = f"artifacts/analyses/{user_id}/lime_{analysis_id}.json"
+        else:
+            result_s3_key = f"artifacts/analyses/lime_{analysis_id}.json"
+
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as result_file:
             json.dump(results, result_file)
             result_file.flush()

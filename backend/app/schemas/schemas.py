@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, UUID4
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -23,11 +23,21 @@ class ExplainerType(str, Enum):
     LIME = "lime"
 
 
+class ModelType(str, Enum):
+    SKLEARN = "sklearn"
+    XGBOOST = "xgboost"
+    LIGHTGBM = "lightgbm"
+    CATBOOST = "catboost"
+    PYTORCH = "pytorch"
+    TENSORFLOW = "tensorflow"
+    ONNX = "onnx"
+
+
 # Model schemas
 class ModelBase(BaseModel):
     name: str
     description: Optional[str] = None
-    model_type: str
+    model_type: ModelType
 
 
 class ModelCreate(ModelBase):
@@ -35,7 +45,8 @@ class ModelCreate(ModelBase):
 
 
 class ModelResponse(ModelBase):
-    id: int
+    id: UUID4
+    user_id: UUID4
     s3_key: str
     file_size: Optional[int] = None
     status: ModelStatus
@@ -56,11 +67,12 @@ class DatasetCreate(DatasetBase):
 
 
 class DatasetResponse(DatasetBase):
-    id: int
+    id: UUID4
+    user_id: UUID4
     s3_key: str
     file_size: Optional[int] = None
     num_rows: Optional[int] = None
-    num_features: Optional[int] = None
+    num_columns: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -69,16 +81,17 @@ class DatasetResponse(DatasetBase):
 
 # Analysis schemas
 class AnalysisCreate(BaseModel):
-    model_id: int
-    dataset_id: int
+    model_id: UUID4
+    dataset_id: UUID4
     explainer_type: ExplainerType
 
 
 class AnalysisResponse(BaseModel):
-    id: int
-    model_id: int
-    dataset_id: int
-    explainer_type: str
+    id: UUID4
+    user_id: UUID4
+    model_id: UUID4
+    dataset_id: UUID4
+    method: ExplainerType
     status: AnalysisStatus
     result_s3_key: Optional[str] = None
     celery_task_id: Optional[str] = None
