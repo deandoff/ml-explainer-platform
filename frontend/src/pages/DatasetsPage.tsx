@@ -25,7 +25,7 @@ import UploadIcon from '@mui/icons-material/Upload';
 import { datasetsAPI } from '../api';
 
 interface Dataset {
-  id: number;
+  id: string;
   name: string;
   description: string;
   file_size: number;
@@ -95,7 +95,7 @@ const DatasetsPage: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this dataset?')) {
       return;
     }

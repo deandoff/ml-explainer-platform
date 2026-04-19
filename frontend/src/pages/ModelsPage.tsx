@@ -29,7 +29,7 @@ import UploadIcon from '@mui/icons-material/Upload';
 import { modelsAPI } from '../api';
 
 interface Model {
-  id: number;
+  id: string;
   name: string;
   description: string;
   model_type: string;
@@ -101,7 +101,7 @@ const ModelsPage: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this model?')) {
       return;
     }

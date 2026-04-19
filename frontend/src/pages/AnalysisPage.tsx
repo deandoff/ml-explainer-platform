@@ -19,24 +19,24 @@ import Plot from 'react-plotly.js';
 import { modelsAPI, datasetsAPI, analysesAPI } from '../api';
 
 interface Model {
-  id: number;
+  id: string;
   name: string;
   model_type: string;
 }
 
 interface Dataset {
-  id: number;
+  id: string;
   name: string;
 }
 
 const AnalysisPage: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [selectedModel, setSelectedModel] = useState<number | ''>('');
-  const [selectedDataset, setSelectedDataset] = useState<number | ''>('');
+  const [selectedModel, setSelectedModel] = useState<string | ''>('');
+  const [selectedDataset, setSelectedDataset] = useState<string | ''>('');
   const [explainerType, setExplainerType] = useState<'shap' | 'lime'>('shap');
   const [loading, setLoading] = useState(false);
-  const [analysisId, setAnalysisId] = useState<number | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<string>('');
   const [results, setResults] = useState<any>(null);
 
@@ -192,7 +192,7 @@ const AnalysisPage: React.FC = () => {
               <InputLabel>Select Model</InputLabel>
               <Select
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value as number)}
+                onChange={(e) => setSelectedModel(e.target.value as string)}
               >
                 {models.map((model) => (
                   <MenuItem key={model.id} value={model.id}>
@@ -206,7 +206,7 @@ const AnalysisPage: React.FC = () => {
               <InputLabel>Select Dataset</InputLabel>
               <Select
                 value={selectedDataset}
-                onChange={(e) => setSelectedDataset(e.target.value as number)}
+                onChange={(e) => setSelectedDataset(e.target.value as string)}
               >
                 {datasets.map((dataset) => (
                   <MenuItem key={dataset.id} value={dataset.id}>

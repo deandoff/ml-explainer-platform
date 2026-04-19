@@ -20,10 +20,10 @@ export const modelsAPI = {
   listModels: () =>
     api.get('/api/models/'),
 
-  getModel: (id: number) =>
+  getModel: (id: string) =>
     api.get(`/api/models/${id}`),
 
-  deleteModel: (id: number) =>
+  deleteModel: (id: string) =>
     api.delete(`/api/models/${id}`),
 };
 
@@ -38,10 +38,10 @@ export const datasetsAPI = {
   listDatasets: () =>
     api.get('/api/datasets/'),
 
-  getDataset: (id: number) =>
+  getDataset: (id: string) =>
     api.get(`/api/datasets/${id}`),
 
-  deleteDataset: (id: number) =>
+  deleteDataset: (id: string) =>
     api.delete(`/api/datasets/${id}`),
 };
 
@@ -50,13 +50,13 @@ export const analysesAPI = {
   createAnalysis: (data: any) =>
     api.post('/api/analyses/', data),
 
-  getAnalysis: (id: number) =>
+  getAnalysis: (id: string) =>
     api.get(`/api/analyses/${id}`),
 
-  getAnalysisStatus: (id: number) =>
+  getAnalysisStatus: (id: string) =>
     api.get(`/api/analyses/${id}/status`),
 
-  getAnalysisResults: (id: number) =>
+  getAnalysisResults: (id: string) =>
     api.get(`/api/analyses/${id}/results`),
 
   listAnalyses: () =>

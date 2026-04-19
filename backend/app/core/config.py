@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     BACKEND_PORT: int = 8000
     SECRET_KEY: str
 
+    # JWT Authentication
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
     # Celery
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
