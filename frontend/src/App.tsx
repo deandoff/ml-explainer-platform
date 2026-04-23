@@ -12,6 +12,8 @@ import RegisterPage from './pages/RegisterPage';
 import ModelsPage from './pages/ModelsPage';
 import DatasetsPage from './pages/DatasetsPage';
 import AnalysisPage from './pages/AnalysisPage';
+import AnalysisResultsPage from './pages/AnalysisResultsPage';
+import LimeResultsPage from './pages/LimeResultsPage';
 
 const theme = createTheme({
   palette: {
@@ -69,6 +71,22 @@ function App() {
                   element={
                     <PrivateRoute>
                       <AnalysisPage />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/analysis/:analysisId/results"
+                  element={
+                    <PrivateRoute>
+                      <AnalysisResultsPage />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/analysis/:analysisId/lime-results"
+                  element={
+                    <PrivateRoute>
+                      <LimeResultsPage />
                     </PrivateRoute>
                   }
                 />

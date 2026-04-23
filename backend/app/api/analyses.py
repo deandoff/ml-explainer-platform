@@ -8,6 +8,7 @@ from app.models.models import Analysis as AnalysisDB, AnalysisStatus, Model as M
 from app.schemas.schemas import AnalysisCreate, AnalysisResponse
 from app.core.tasks import run_shap_analysis, run_lime_analysis
 from datetime import datetime
+import os
 
 router = APIRouter()
 
@@ -149,7 +150,7 @@ async def get_analysis_results(
     current_user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
-    """Get analysis results"""
+    """Get analysis results - returns JSON directly"""
     analysis = db.query(AnalysisDB).filter(
         AnalysisDB.id == analysis_id,
         AnalysisDB.user_id == current_user_id
@@ -163,15 +164,18 @@ async def get_analysis_results(
     if not analysis.result_s3_key:
         raise HTTPException(status_code=404, detail="Results not found")
 
-    # Get presigned URL for results
+    # Read results file and return JSON directly
     from app.services.storage import storage_service
-    download_url = storage_service.generate_presigned_download_url(analysis.result_s3_key)
+    import tempfile
+    import json
 
-    return {
-        "analysis_id": str(analysis.id),
-        "download_url": download_url,
-        "result_s3_key": analysis.result_s3_key
-    }
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.json') as tmp_file:
+        storage_service.download_file(analysis.result_s3_key, tmp_file.name)
+        with open(tmp_file.name, 'r') as f:
+            results_data = json.load(f)
+        os.unlink(tmp_file.name)
+
+    return results_data
 
 
 @router.get("/", response_model=List[AnalysisResponse])

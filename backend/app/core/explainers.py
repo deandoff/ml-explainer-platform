@@ -29,11 +29,13 @@ class SHAPExplainer:
         def predict_fn(X):
             return ModelLoader.predict(model, pd.DataFrame(X, columns=background_data.columns), model_type)
 
-        # Initialize appropriate SHAP explainer
+        # Initialize appropriate SHAP explainer using new API
         if model_type in ["sklearn", "xgboost", "lightgbm", "catboost"]:
             try:
-                self.explainer = shap.TreeExplainer(model)
+                # Use new Explainer API with masker for better performance
+                self.explainer = shap.Explainer(model, background_data)
             except:
+                # Fallback to KernelExplainer for unsupported models
                 self.explainer = shap.KernelExplainer(predict_fn, background_data.values)
         else:
             self.explainer = shap.KernelExplainer(predict_fn, background_data.values)
