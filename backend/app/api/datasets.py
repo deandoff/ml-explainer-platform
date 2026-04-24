@@ -155,3 +155,64 @@ async def delete_dataset(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete dataset: {str(e)}")
+
+
+@router.get("/{dataset_id}/download")
+async def download_dataset(
+    dataset_id: UUID,
+    current_user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Get download URL for dataset (only if owned by current user)"""
+    dataset = db.query(DatasetDB).filter(
+        DatasetDB.id == dataset_id,
+        DatasetDB.user_id == current_user_id
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        download_url = storage_service.generate_presigned_download_url(dataset.s3_key)
+
+        # For local storage, return API endpoint instead of file path
+        if settings.STORAGE_MODE == "local":
+            download_url = f"http://localhost:8000/api/datasets/download-file/{dataset.s3_key}"
+
+        return {
+            "download_url": download_url,
+            "filename": dataset.name,
+            "file_size": dataset.file_size
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate download URL: {str(e)}")
+
+
+@router.get("/download-file/{s3_key:path}")
+async def download_file_direct(
+    s3_key: str,
+    current_user_id: UUID = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """Direct file download endpoint for local storage"""
+    from fastapi.responses import FileResponse
+
+    # Verify user owns this dataset
+    dataset = db.query(DatasetDB).filter(
+        DatasetDB.s3_key == s3_key,
+        DatasetDB.user_id == current_user_id
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        file_path = storage_service.generate_presigned_download_url(s3_key)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+
+        return FileResponse(
+            path=file_path,
+            filename=dataset.name,
+            media_type='text/csv'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")

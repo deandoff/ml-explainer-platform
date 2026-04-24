@@ -15,6 +15,10 @@ from app.core.shap_native_plots import (
     generate_shap_dependence_native,
     generate_shap_bar_plot_native
 )
+from app.core.shap_interactive import (
+    prepare_shap_interactive_data,
+    prepare_local_explanation
+)
 from app.services.storage import storage_service
 import pandas as pd
 import numpy as np
@@ -182,6 +186,26 @@ def run_shap_analysis(
                 base_value=base_value,
                 instance_idx=0
             )
+
+            # 5. Prepare interactive SHAP data
+            self.update_state(state='PROGRESS', meta={'status': 'Preparing interactive data'})
+
+            # Get predictions for interactive data
+            predictions = ModelLoader.predict(model, sample_data, model_type)
+            if len(predictions.shape) > 1:
+                predictions = predictions[:, 0]  # Take first class for multi-class
+
+            interactive_data = prepare_shap_interactive_data(
+                shap_values=shap_values_array,
+                feature_values=sample_data.values,
+                feature_names=data.columns.tolist(),
+                predictions=predictions,
+                base_value=base_value,
+                sample_indices=sample_data.index.tolist()
+            )
+
+            # Store interactive data separately for efficient loading
+            visualizations['interactive_data'] = interactive_data
 
             # 3. Model Performance Metrics (if we can get predictions)
             try:

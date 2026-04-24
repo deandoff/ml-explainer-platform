@@ -25,6 +25,9 @@ export const modelsAPI = {
 
   deleteModel: (id: string) =>
     api.delete(`/api/models/${id}`),
+
+  downloadModel: (id: string) =>
+    api.get(`/api/models/${id}/download`),
 };
 
 // Datasets API
@@ -43,6 +46,9 @@ export const datasetsAPI = {
 
   deleteDataset: (id: string) =>
     api.delete(`/api/datasets/${id}`),
+
+  downloadDataset: (id: string) =>
+    api.get(`/api/datasets/${id}/download`),
 };
 
 // Analyses API
@@ -61,6 +67,30 @@ export const analysesAPI = {
 
   listAnalyses: () =>
     api.get('/api/analyses/'),
+};
+
+// SHAP Interactive API
+export const shapInteractiveAPI = {
+  getInteractiveData: (id: string, params?: URLSearchParams) =>
+    api.get(`/api/shap/${id}/interactive-data${params ? '?' + params.toString() : ''}`),
+
+  getLocalExplanation: (analysisId: string, sampleId: number) =>
+    api.get(`/api/shap/${analysisId}/local-explanation/${sampleId}`),
+
+  getFeatureStats: (analysisId: string, featureName: string) =>
+    api.get(`/api/shap/${analysisId}/feature-stats/${featureName}`),
+
+  compareSamples: (analysisId: string, sampleIds: number[]) =>
+    api.get(`/api/shap/${analysisId}/comparison?sample_ids=${sampleIds.join(',')}`),
+};
+
+// What-If Analysis API
+export const whatIfAPI = {
+  analyze: (analysisId: string, sampleId: number, modifiedFeatures: Record<string, number>) =>
+    api.post(`/api/whatif/${analysisId}/what-if`, {
+      sample_id: sampleId,
+      modified_features: modifiedFeatures
+    })
 };
 
 export default api;
