@@ -21,6 +21,7 @@ import {
   IconButton,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
 import UploadIcon from '@mui/icons-material/Upload';
 import { datasetsAPI } from '../api';
 
@@ -109,6 +110,42 @@ const DatasetsPage: React.FC = () => {
     }
   };
 
+  const handleDownload = async (id: string) => {
+    try {
+      const response = await datasetsAPI.downloadDataset(id);
+      const { download_url, filename } = response.data;
+
+      // For local storage, download through axios with auth
+      if (download_url.includes('localhost')) {
+        const fileResponse = await axios.get(download_url, {
+          responseType: 'blob',
+          headers: {
+            'Authorization': localStorage.getItem('access_token')
+              ? `Bearer ${localStorage.getItem('access_token')}`
+              : ''
+          }
+        });
+
+        // Create blob URL and trigger download
+        const blob = new Blob([fileResponse.data]);
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename || 'dataset.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } else {
+        // For S3, open presigned URL directly
+        window.open(download_url, '_blank');
+      }
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Failed to download dataset');
+    }
+  };
+
   const resetForm = () => {
     setDatasetName('');
     setDatasetDescription('');
@@ -154,6 +191,9 @@ const DatasetsPage: React.FC = () => {
                   </TableCell>
                   <TableCell>{new Date(dataset.created_at).toLocaleDateString()}</TableCell>
                   <TableCell>
+                    <IconButton onClick={() => handleDownload(dataset.id)} color="primary">
+                      <DownloadIcon />
+                    </IconButton>
                     <IconButton onClick={() => handleDelete(dataset.id)} color="error">
                       <DeleteIcon />
                     </IconButton>
