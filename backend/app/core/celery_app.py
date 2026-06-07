@@ -16,6 +16,7 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=3600,  # 1 hour max
     task_soft_time_limit=3000,  # 50 minutes soft limit
+    broker_connection_retry_on_startup=True,
 )
 
 # Auto-discover tasks

@@ -1,0 +1,112 @@
+name: ml-explainer-prod
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    env_file:
+      - ${ENV_FILE:-.env.production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    image: ${BACKEND_IMAGE:-ml-explainer-backend:latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ${ENV_FILE:-.env.production}
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=*
+    volumes:
+      - app_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  celery-worker:
+    image: ${BACKEND_IMAGE:-ml-explainer-backend:latest}
+    env_file:
+      - ${ENV_FILE:-.env.production}
+    command:
+      - celery
+      - -A
+      - app.core.celery_app
+      - worker
+      - --loglevel=info
+      - --concurrency=1
+    volumes:
+      - app_storage:/app/storage
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 1h
+    logging:
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ml-explainer-frontend:latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        REACT_APP_API_URL: ""
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+  redis_data:
+  app_storage:

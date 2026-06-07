@@ -2,24 +2,29 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
-COPY . .
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    MPLCONFIGDIR=/tmp/matplotlib
 
-# Expose port
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --create-home app
+
+COPY --chown=app:app . .
+RUN mkdir -p /app/storage /tmp/matplotlib \
+    && chown -R app:app /app/storage /tmp/matplotlib
+
 EXPOSE 8000
 
-# Run application
+USER app
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

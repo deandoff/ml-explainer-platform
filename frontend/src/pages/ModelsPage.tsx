@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import {
   Container,
   Typography,
@@ -27,7 +26,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadIcon from '@mui/icons-material/Upload';
-import { modelsAPI } from '../api';
+import { downloadPrivateFile, modelsAPI, uploadFile as uploadToTarget } from '../api';
 
 interface Model {
   id: string;
@@ -74,13 +73,8 @@ const ModelsPage: React.FC = () => {
     try {
       // Get presigned URL
       const urlResponse = await modelsAPI.getUploadUrl(modelType);
-      const { upload_url, s3_key } = urlResponse.data;
-
-      // Upload file using axios with FormData
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-
-      await axios.post(upload_url, formData);
+      const { s3_key } = urlResponse.data;
+      await uploadToTarget(urlResponse.data, uploadFile);
 
       // Create model record
       await modelsAPI.createModel({
@@ -121,16 +115,8 @@ const ModelsPage: React.FC = () => {
       const response = await modelsAPI.downloadModel(id);
       const { download_url, filename } = response.data;
 
-      // For local storage, download through axios with auth
-      if (download_url.includes('localhost')) {
-        const fileResponse = await axios.get(download_url, {
-          responseType: 'blob',
-          headers: {
-            'Authorization': localStorage.getItem('access_token')
-              ? `Bearer ${localStorage.getItem('access_token')}`
-              : ''
-          }
-        });
+      if (download_url.startsWith('/')) {
+        const fileResponse = await downloadPrivateFile(download_url);
 
         // Create blob URL and trigger download
         const blob = new Blob([fileResponse.data]);

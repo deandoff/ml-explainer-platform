@@ -21,7 +21,6 @@ import {
   Slider,
   TextField,
   Divider,
-  Stack,
   LinearProgress,
   Tooltip,
 } from '@mui/material';
@@ -45,33 +44,41 @@ const LimeResultsPage: React.FC = () => {
   const [showTopN, setShowTopN] = useState(10);
 
   useEffect(() => {
-    loadResults();
-  }, [analysisId]);
+    let isActive = true;
 
-  const loadResults = async () => {
-    if (!analysisId) return;
+    const loadResults = async () => {
+      if (!analysisId) return;
 
-    try {
-      const response = await analysesAPI.getAnalysisResults(analysisId);
-      setResults(response.data);
+      try {
+        const response = await analysesAPI.getAnalysisResults(analysisId);
+        if (!isActive) return;
 
-      if (response.data.instance_explanations?.[0]) {
-        const firstInstance = response.data.instance_explanations[0];
-        setInstanceData(firstInstance);
+        setResults(response.data);
 
-        const initialValues: any = {};
-        Object.keys(firstInstance.explanation.feature_importance).forEach(feature => {
-          initialValues[feature] = 0;
-        });
-        setWhatIfValues(initialValues);
+        if (response.data.instance_explanations?.[0]) {
+          const firstInstance = response.data.instance_explanations[0];
+          setInstanceData(firstInstance);
+
+          const initialValues: any = {};
+          Object.keys(firstInstance.explanation.feature_importance).forEach(feature => {
+            initialValues[feature] = 0;
+          });
+          setWhatIfValues(initialValues);
+        }
+      } catch (error) {
+        console.error('Failed to load results:', error);
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
       }
+    };
 
-      setLoading(false);
-    } catch (error) {
-      console.error('Failed to load results:', error);
-      setLoading(false);
-    }
-  };
+    loadResults();
+    return () => {
+      isActive = false;
+    };
+  }, [analysisId]);
 
   if (loading) {
     return (

@@ -29,6 +29,12 @@ async def register(
     Raises:
         HTTPException 409: If email already registered
     """
+    if not settings.REGISTRATION_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled",
+        )
+
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:

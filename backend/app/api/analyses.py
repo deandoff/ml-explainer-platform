@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_user_id
 from app.models.models import Analysis as AnalysisDB, AnalysisStatus, Model as ModelDB, Dataset as DatasetDB
 from app.schemas.schemas import AnalysisCreate, AnalysisResponse
-from app.core.tasks import run_shap_analysis, run_lime_analysis
+from app.core.celery_app import celery_app
 from datetime import datetime
 import os
 
@@ -51,22 +51,21 @@ async def create_analysis(
 
     # Start Celery task
     try:
-        if analysis.explainer_type.value == "shap":
-            task = run_shap_analysis.delay(
-                model_s3_key=model.s3_key,
-                dataset_s3_key=dataset.s3_key,
-                model_type=str(model.model_type.value),
-                analysis_id=str(db_analysis.id),
-                user_id=str(current_user_id)
-            )
-        else:  # lime
-            task = run_lime_analysis.delay(
-                model_s3_key=model.s3_key,
-                dataset_s3_key=dataset.s3_key,
-                model_type=str(model.model_type.value),
-                analysis_id=str(db_analysis.id),
-                user_id=str(current_user_id)
-            )
+        task_name = (
+            "app.core.tasks.run_shap_analysis"
+            if analysis.explainer_type.value == "shap"
+            else "app.core.tasks.run_lime_analysis"
+        )
+        task = celery_app.send_task(
+            task_name,
+            kwargs={
+                "model_s3_key": model.s3_key,
+                "dataset_s3_key": dataset.s3_key,
+                "model_type": str(model.model_type.value),
+                "analysis_id": str(db_analysis.id),
+                "user_id": str(current_user_id),
+            },
+        )
 
         # Update with task ID
         db_analysis.celery_task_id = task.id
@@ -121,8 +120,12 @@ async def get_analysis_status(
 
         if task.state == 'SUCCESS':
             result = task.result
-            analysis.status = AnalysisStatus.COMPLETED
-            analysis.result_s3_key = result.get('result_s3_key')
+            if result.get('status') == 'failed':
+                analysis.status = AnalysisStatus.FAILED
+                analysis.error_message = result.get('error', 'Analysis failed')
+            else:
+                analysis.status = AnalysisStatus.COMPLETED
+                analysis.result_s3_key = result.get('result_s3_key')
             analysis.completed_at = datetime.utcnow()
             db.commit()
 

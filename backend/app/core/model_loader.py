@@ -1,30 +1,20 @@
+import importlib
 import joblib
 import pickle
-import tempfile
-import os
-from typing import Any, Dict, Optional
+from typing import Any
 import numpy as np
 import pandas as pd
-
-# ML frameworks
-try:
-    import torch
-except ImportError:
-    torch = None
-
-try:
-    import tensorflow as tf
-except ImportError:
-    tf = None
-
-try:
-    import onnxruntime as ort
-except ImportError:
-    ort = None
 
 
 class ModelLoader:
     """Universal model loader supporting multiple ML frameworks"""
+
+    @staticmethod
+    def _import_dependency(module_name: str, display_name: str) -> Any:
+        try:
+            return importlib.import_module(module_name)
+        except ImportError as exc:
+            raise ImportError(f"{display_name} is not installed") from exc
 
     @staticmethod
     def load_model(file_path: str, model_type: str) -> Any:
@@ -42,18 +32,15 @@ class ModelLoader:
             return joblib.load(file_path)
 
         elif model_type == "pytorch":
-            if torch is None:
-                raise ImportError("PyTorch is not installed")
+            torch = ModelLoader._import_dependency("torch", "PyTorch")
             return torch.load(file_path, map_location=torch.device('cpu'))
 
         elif model_type == "tensorflow":
-            if tf is None:
-                raise ImportError("TensorFlow is not installed")
+            tf = ModelLoader._import_dependency("tensorflow", "TensorFlow")
             return tf.keras.models.load_model(file_path)
 
         elif model_type == "onnx":
-            if ort is None:
-                raise ImportError("ONNX Runtime is not installed")
+            ort = ModelLoader._import_dependency("onnxruntime", "ONNX Runtime")
             return ort.InferenceSession(file_path)
 
         else:
@@ -80,8 +67,7 @@ class ModelLoader:
             return model.predict(data)
 
         elif model_type == "pytorch":
-            if torch is None:
-                raise ImportError("PyTorch is not installed")
+            torch = ModelLoader._import_dependency("torch", "PyTorch")
             model.eval()
             with torch.no_grad():
                 tensor_data = torch.FloatTensor(data.values)
@@ -89,13 +75,11 @@ class ModelLoader:
                 return predictions.numpy()
 
         elif model_type == "tensorflow":
-            if tf is None:
-                raise ImportError("TensorFlow is not installed")
+            ModelLoader._import_dependency("tensorflow", "TensorFlow")
             return model.predict(data.values)
 
         elif model_type == "onnx":
-            if ort is None:
-                raise ImportError("ONNX Runtime is not installed")
+            ModelLoader._import_dependency("onnxruntime", "ONNX Runtime")
             input_name = model.get_inputs()[0].name
             predictions = model.run(None, {input_name: data.values.astype(np.float32)})
             return predictions[0]

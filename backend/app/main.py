@@ -1,11 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from redis import Redis
+from sqlalchemy import text
 from app.core.config import settings
-from app.core.database import engine, Base
+from app.core.database import engine
 from app.api import models, datasets, analyses, auth, shap_interactive, whatif
-
-# Create database tables
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="ML Explainer Platform",
@@ -36,6 +35,25 @@ async def root():
     return {"message": "ML Explainer Platform API", "version": "1.0.0"}
 
 
-@app.get("/health")
-async def health_check():
+@app.get("/health/live")
+async def liveness_check():
     return {"status": "healthy"}
+
+
+@app.get("/health")
+@app.get("/health/ready")
+async def readiness_check():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+        redis_client = Redis.from_url(settings.REDIS_URL)
+        redis_client.ping()
+        redis_client.close()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service dependencies are unavailable",
+        ) from exc
+
+    return {"status": "ready"}
