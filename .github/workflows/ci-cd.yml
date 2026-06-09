@@ -64,10 +64,51 @@ jobs:
           REACT_APP_API_URL: ""
         run: npm run build
 
+  changes:
+    name: Определение изменившихся образов
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Определить изменившиеся каталоги
+        id: filter
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          backend=false
+          frontend=false
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ||
+                -z "$BEFORE_SHA" ||
+                "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            backend=true
+            frontend=true
+          else
+            if ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- backend/; then
+              backend=true
+            fi
+            if ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- frontend/; then
+              frontend=true
+            fi
+          fi
+
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
   publish:
     name: Сборка и публикация образов
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: ci
+    needs:
+      - ci
+      - changes
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -102,6 +143,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Собрать и опубликовать ${{ matrix.service }}
+        if: >-
+          (matrix.service == 'backend' && needs.changes.outputs.backend == 'true') ||
+          (matrix.service == 'frontend' && needs.changes.outputs.frontend == 'true')
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
@@ -114,6 +158,15 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           provenance: true
           sbom: true
+
+      - name: Создать SHA-тег для неизменившегося ${{ matrix.service }}
+        if: >-
+          (matrix.service == 'backend' && needs.changes.outputs.backend != 'true') ||
+          (matrix.service == 'frontend' && needs.changes.outputs.frontend != 'true')
+        run: |
+          docker buildx imagetools create \
+            --tag "${{ matrix.image }}:${{ github.sha }}" \
+            "${{ matrix.image }}:latest"
 
   deploy:
     name: Деплой в production

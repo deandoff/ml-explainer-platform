@@ -17,11 +17,11 @@ boto3==1.35.36
 shap==0.46.0
 lime==0.2.0.1
 scikit-learn==1.5.2
-xgboost==2.1.2
+xgboost-cpu==2.1.2
 lightgbm==4.5.0
 catboost==1.2.7
 torch==2.5.1
-tensorflow==2.18.0
+tensorflow-cpu==2.18.0
 onnx==1.17.0
 onnxruntime==1.20.1
 
