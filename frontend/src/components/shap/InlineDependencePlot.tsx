@@ -9,11 +9,13 @@ import {
   FormControl,
   InputLabel,
   Grid,
-  CircularProgress
+  CircularProgress,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import Plot from 'react-plotly.js';
+import type { Data, Layout } from 'plotly.js';
 import { shapInteractiveAPI } from '../../api';
+import { russianPlotlyConfig } from '../../utils/plotlyConfig';
 
 interface Props {
   analysisId: string;
@@ -62,10 +64,9 @@ const InlineDependencePlot: React.FC<Props> = ({
   }, [analysisId, featureName]);
 
   // Prepare dependence plot data
-  const plotData = React.useMemo(() => {
+  const plotData = React.useMemo<Data[]>(() => {
     if (!shapData || !shapData.points) return [];
 
-    // Extract data for this feature
     const points = shapData.points.map((p: any) => {
       const featureData = p.features[featureName];
       if (!featureData) return null;
@@ -123,25 +124,25 @@ const InlineDependencePlot: React.FC<Props> = ({
       },
       hovertemplate:
         `<b>${featureName}</b><br>` +
-        'Feature value: %{x:.4f}<br>' +
-        'SHAP value: %{y:.4f}<br>' +
-        'Prediction: %{customdata[1]:.4f}<br>' +
-        'Sample ID: %{customdata[0]}<br>' +
+        'Значение признака: %{x:.4f}<br>' +
+        'Значение SHAP: %{y:.4f}<br>' +
+        'Предсказание: %{customdata[1]:.4f}<br>' +
+        'Идентификатор объекта: %{customdata[0]}<br>' +
         '<extra></extra>'
     }];
   }, [shapData, featureName, interactionFeature, selectedSamples]);
 
-  const layout = {
+  const layout: Partial<Layout> = {
     title: {
-      text: `Dependence Plot: ${featureName}`,
+      text: `График зависимости: ${featureName}`,
       font: { size: 16, weight: 600 }
     },
     xaxis: {
-      title: `${featureName} value`,
+      title: { text: `Значение ${featureName}` },
       gridcolor: 'rgba(0,0,0,0.1)'
     },
     yaxis: {
-      title: `SHAP value for ${featureName}`,
+      title: { text: `Значение SHAP для ${featureName}` },
       zeroline: true,
       zerolinecolor: 'rgba(0,0,0,0.3)',
       zerolinewidth: 2,
@@ -163,7 +164,6 @@ const InlineDependencePlot: React.FC<Props> = ({
     }
   };
 
-  // Get available features for interaction selection
   const availableFeatures = shapData?.feature_names || [];
 
   return (
@@ -179,7 +179,7 @@ const InlineDependencePlot: React.FC<Props> = ({
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6" color="primary">
-          Feature Dependence Analysis
+          Анализ зависимости признака
         </Typography>
         <IconButton onClick={onClose} size="small">
           <CloseIcon />
@@ -189,14 +189,14 @@ const InlineDependencePlot: React.FC<Props> = ({
       {/* Controls */}
       <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Interaction Feature</InputLabel>
+          <InputLabel>Признак взаимодействия</InputLabel>
           <Select
             value={interactionFeature}
-            label="Interaction Feature"
+            label="Признак взаимодействия"
             onChange={(e) => setInteractionFeature(e.target.value)}
           >
-            <MenuItem value="auto">Auto-detect</MenuItem>
-            <MenuItem value="none">None (use feature value)</MenuItem>
+            <MenuItem value="auto">Определить автоматически</MenuItem>
+            <MenuItem value="none">Без взаимодействия</MenuItem>
             {availableFeatures
               .filter((f: string) => f !== featureName)
               .slice(0, 10)
@@ -207,7 +207,7 @@ const InlineDependencePlot: React.FC<Props> = ({
         </FormControl>
 
         <Typography variant="caption" color="text.secondary">
-          Color shows interaction with selected feature
+          Цвет показывает взаимодействие с выбранным признаком
         </Typography>
       </Box>
 
@@ -218,9 +218,10 @@ const InlineDependencePlot: React.FC<Props> = ({
         </Box>
       ) : (
         <Plot
-          data={plotData as any}
-          layout={layout as any}
+          data={plotData}
+          layout={layout}
           config={{
+            ...russianPlotlyConfig,
             responsive: true,
             displayModeBar: true,
             displaylogo: false,
@@ -237,7 +238,7 @@ const InlineDependencePlot: React.FC<Props> = ({
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.02)', textAlign: 'center' }}>
               <Typography variant="caption" color="text.secondary">
-                Correlation
+                Корреляция
               </Typography>
               <Typography variant="h6" color={
                 Math.abs(featureStats.statistics.correlation) > 0.7 ? 'error.main' :
@@ -252,7 +253,7 @@ const InlineDependencePlot: React.FC<Props> = ({
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.02)', textAlign: 'center' }}>
               <Typography variant="caption" color="text.secondary">
-                Mean |SHAP|
+                Среднее |SHAP|
               </Typography>
               <Typography variant="h6">
                 {featureStats.statistics.mean_abs_shap.toFixed(4)}
@@ -263,7 +264,7 @@ const InlineDependencePlot: React.FC<Props> = ({
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.02)', textAlign: 'center' }}>
               <Typography variant="caption" color="text.secondary">
-                Max Impact
+                Максимальное влияние
               </Typography>
               <Typography variant="h6">
                 {featureStats.statistics.max_impact.toFixed(4)}
@@ -274,7 +275,7 @@ const InlineDependencePlot: React.FC<Props> = ({
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.02)', textAlign: 'center' }}>
               <Typography variant="caption" color="text.secondary">
-                Positive Impact
+                Положительное влияние
               </Typography>
               <Typography variant="h6">
                 {(featureStats.statistics.positive_impact_ratio * 100).toFixed(1)}%
@@ -287,24 +288,24 @@ const InlineDependencePlot: React.FC<Props> = ({
       {/* Insights */}
       <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(25, 118, 210, 0.04)', borderRadius: 1 }}>
         <Typography variant="subtitle2" gutterBottom>
-          💡 Insights
+          Выводы
         </Typography>
         <Typography variant="body2" color="text.secondary">
           {featureStats && Math.abs(featureStats.statistics.correlation) > 0.7 ? (
             <>
-              <strong>Strong correlation</strong> ({featureStats.statistics.correlation > 0 ? 'positive' : 'negative'})
-              between feature value and SHAP value. Higher values of {featureName} tend to
-              {featureStats.statistics.correlation > 0 ? ' increase' : ' decrease'} predictions.
+              <strong>Сильная {featureStats.statistics.correlation > 0 ? 'положительная' : 'отрицательная'} корреляция</strong>
+              {' '}между значением признака и значением SHAP. Более высокие значения {featureName}, как правило,
+              {featureStats.statistics.correlation > 0 ? ' увеличивают' : ' уменьшают'} предсказание.
             </>
           ) : featureStats && Math.abs(featureStats.statistics.correlation) < 0.2 ? (
             <>
-              <strong>Weak correlation</strong> suggests non-linear relationship or interactions with other features.
-              Consider checking interaction effects.
+              <strong>Слабая корреляция</strong> указывает на нелинейную зависимость или взаимодействие с другими
+              признаками. Стоит проверить эффекты взаимодействия.
             </>
           ) : (
             <>
-              <strong>Moderate correlation</strong> indicates some relationship between feature value and impact.
-              The pattern may vary across different value ranges.
+              <strong>Умеренная корреляция</strong> указывает на связь между значением признака и его влиянием.
+              Характер связи может меняться в разных диапазонах значений.
             </>
           )}
         </Typography>

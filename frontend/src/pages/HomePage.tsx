@@ -9,7 +9,7 @@ const HomePage: React.FC = () => {
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
         <Typography variant="h3" component="h1" gutterBottom align="center">
-          ML Explainer Platform
+          Платформа объяснения ML-моделей
         </Typography>
         <Typography variant="h6" align="center" color="text.secondary" paragraph>
           Объясняйте решения моделей машинного обучения с помощью SHAP и LIME

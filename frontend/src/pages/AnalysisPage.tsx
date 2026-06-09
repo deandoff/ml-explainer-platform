@@ -24,10 +24,13 @@ import {
   IconButton,
   TablePagination,
 } from '@mui/material';
+import type { ChipProps } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import Plot from 'react-plotly.js';
 import { modelsAPI, datasetsAPI, analysesAPI } from '../api';
+import { formatMetricName, formatStatus } from '../utils/localization';
+import { russianPlotlyConfig } from '../utils/plotlyConfig';
 
 interface Model {
   id: string;
@@ -120,7 +123,7 @@ const AnalysisPage: React.FC = () => {
       if (status === 'completed') {
         loadResults();
       } else if (status === 'failed') {
-        alert('Analysis failed');
+        alert('Не удалось выполнить анализ');
         setLoading(false);
       }
     } catch (error) {
@@ -152,7 +155,7 @@ const AnalysisPage: React.FC = () => {
 
   const startAnalysis = async () => {
     if (!selectedModel || !selectedDataset) {
-      alert('Please select model and dataset');
+      alert('Выберите модель и датасет');
       return;
     }
 
@@ -171,12 +174,12 @@ const AnalysisPage: React.FC = () => {
       loadAnalyses(); // Refresh list
     } catch (error) {
       console.error('Failed to start analysis:', error);
-      alert('Failed to start analysis');
+      alert('Не удалось запустить анализ');
       setLoading(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string): ChipProps['color'] => {
     switch (status.toLowerCase()) {
       case 'completed':
         return 'success';
@@ -202,7 +205,7 @@ const AnalysisPage: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    return new Date(dateString).toLocaleString('ru-RU');
   };
 
   const renderFeatureImportance = () => {
@@ -219,12 +222,12 @@ const AnalysisPage: React.FC = () => {
             <Card sx={{ mt: 3 }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  {viz.title || 'SHAP Summary Plot'}
+                  Сводный график SHAP
                 </Typography>
                 <Box sx={{ textAlign: 'center' }}>
                   <img
                     src={viz.image}
-                    alt="SHAP Summary Plot"
+                    alt="Сводный график SHAP"
                     style={{ maxWidth: '100%', height: 'auto' }}
                   />
                 </Box>
@@ -238,12 +241,15 @@ const AnalysisPage: React.FC = () => {
           <Card sx={{ mt: 3 }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                SHAP Summary Plot
+                Сводный график SHAP
               </Typography>
               <Plot
                 data={viz.data}
-                layout={viz.layout}
-                config={{ responsive: true }}
+                layout={{
+                  ...viz.layout,
+                  title: { text: 'Сводный график SHAP' },
+                }}
+                config={{ ...russianPlotlyConfig, responsive: true }}
                 style={{ width: '100%' }}
               />
             </CardContent>
@@ -260,12 +266,12 @@ const AnalysisPage: React.FC = () => {
             <Card sx={{ mt: 3 }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  {viz.title || 'Feature Importance'}
+                  Важность признаков
                 </Typography>
                 <Box sx={{ textAlign: 'center' }}>
                   <img
                     src={viz.image}
-                    alt="Feature Importance"
+                    alt="Важность признаков"
                     style={{ maxWidth: '100%', height: 'auto' }}
                   />
                 </Box>
@@ -280,12 +286,23 @@ const AnalysisPage: React.FC = () => {
           <Card sx={{ mt: 3 }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                LIME Feature Importance
+                Важность признаков по LIME
               </Typography>
               <Plot
                 data={results.visualizations.lime_bar_chart.data}
-                layout={results.visualizations.lime_bar_chart.layout}
-                config={{ responsive: true }}
+                layout={{
+                  ...results.visualizations.lime_bar_chart.layout,
+                  title: { text: 'Важность признаков по LIME' },
+                  xaxis: {
+                    ...results.visualizations.lime_bar_chart.layout?.xaxis,
+                    title: { text: 'Вклад' },
+                  },
+                  yaxis: {
+                    ...results.visualizations.lime_bar_chart.layout?.yaxis,
+                    title: { text: 'Признаки' },
+                  },
+                }}
+                config={{ ...russianPlotlyConfig, responsive: true }}
                 style={{ width: '100%' }}
               />
             </CardContent>
@@ -308,7 +325,7 @@ const AnalysisPage: React.FC = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Feature Importance
+            Важность признаков
           </Typography>
           <Plot
             data={[
@@ -321,13 +338,13 @@ const AnalysisPage: React.FC = () => {
               },
             ]}
             layout={{
-              title: { text: `${explainerType.toUpperCase()} Feature Importance` },
-              xaxis: { title: { text: 'Importance' } },
-              yaxis: { title: { text: 'Features' } },
+              title: { text: `Важность признаков по ${explainerType.toUpperCase()}` },
+              xaxis: { title: { text: 'Важность' } },
+              yaxis: { title: { text: 'Признаки' } },
               height: 400,
               margin: { l: 150 },
             }}
-            config={{ responsive: true }}
+            config={{ ...russianPlotlyConfig, responsive: true }}
             style={{ width: '100%' }}
           />
         </CardContent>
@@ -342,12 +359,23 @@ const AnalysisPage: React.FC = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Confusion Matrix
+            Матрица ошибок
           </Typography>
           <Plot
             data={results.visualizations.confusion_matrix.data}
-            layout={results.visualizations.confusion_matrix.layout}
-            config={{ responsive: true }}
+            layout={{
+              ...results.visualizations.confusion_matrix.layout,
+              title: { text: 'Матрица ошибок' },
+              xaxis: {
+                ...results.visualizations.confusion_matrix.layout?.xaxis,
+                title: { text: 'Предсказанный класс' },
+              },
+              yaxis: {
+                ...results.visualizations.confusion_matrix.layout?.yaxis,
+                title: { text: 'Фактический класс' },
+              },
+            }}
+            config={{ ...russianPlotlyConfig, responsive: true }}
             style={{ width: '100%' }}
           />
         </CardContent>
@@ -364,13 +392,13 @@ const AnalysisPage: React.FC = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Model Performance Metrics
+            Метрики качества модели
           </Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mt: 2 }}>
             {Object.entries(metrics).map(([key, value]) => (
               <Paper key={key} sx={{ p: 2, textAlign: 'center', bgcolor: '#f5f5f5' }}>
                 <Typography variant="body2" color="text.secondary" gutterBottom>
-                  {key.toUpperCase().replace('_', ' ')}
+                  {formatMetricName(key)}
                 </Typography>
                 <Typography variant="h5" color="primary">
                   {(value as number).toFixed(4)}
@@ -394,12 +422,12 @@ const AnalysisPage: React.FC = () => {
         <Card sx={{ mt: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              {viz.title || 'SHAP Dependence Plot'}
+              График зависимости SHAP
             </Typography>
             <Box sx={{ textAlign: 'center' }}>
               <img
                 src={viz.image}
-                alt="SHAP Dependence Plot"
+                alt="График зависимости SHAP"
                 style={{ maxWidth: '100%', height: 'auto' }}
               />
             </Box>
@@ -413,12 +441,15 @@ const AnalysisPage: React.FC = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            SHAP Dependence Plot
+            График зависимости SHAP
           </Typography>
           <Plot
             data={viz.data}
-            layout={viz.layout}
-            config={{ responsive: true }}
+            layout={{
+              ...viz.layout,
+              title: { text: 'График зависимости SHAP' },
+            }}
+            config={{ ...russianPlotlyConfig, responsive: true }}
             style={{ width: '100%' }}
           />
         </CardContent>
@@ -437,12 +468,12 @@ const AnalysisPage: React.FC = () => {
         <Card sx={{ mt: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              {viz.title || 'SHAP Waterfall Plot'}
+              Каскадный график SHAP
             </Typography>
             <Box sx={{ textAlign: 'center' }}>
               <img
                 src={viz.image}
-                alt="SHAP Waterfall Plot"
+                alt="Каскадный график SHAP"
                 style={{ maxWidth: '100%', height: 'auto' }}
               />
             </Box>
@@ -456,12 +487,15 @@ const AnalysisPage: React.FC = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            SHAP Waterfall Plot
+            Каскадный график SHAP
           </Typography>
           <Plot
             data={viz.data}
-            layout={viz.layout}
-            config={{ responsive: true }}
+            layout={{
+              ...viz.layout,
+              title: { text: 'Каскадный график SHAP' },
+            }}
+            config={{ ...russianPlotlyConfig, responsive: true }}
             style={{ width: '100%' }}
           />
         </CardContent>
@@ -473,15 +507,16 @@ const AnalysisPage: React.FC = () => {
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
         <Typography variant="h4" gutterBottom>
-          Model Analysis
+          Анализ модели
         </Typography>
 
         <Paper sx={{ p: 3, mb: 3 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <FormControl fullWidth>
-              <InputLabel>Select Model</InputLabel>
+              <InputLabel>Модель</InputLabel>
               <Select
                 value={selectedModel}
+                label="Модель"
                 onChange={(e) => setSelectedModel(e.target.value as string)}
               >
                 {models.map((model) => (
@@ -493,9 +528,10 @@ const AnalysisPage: React.FC = () => {
             </FormControl>
 
             <FormControl fullWidth>
-              <InputLabel>Select Dataset</InputLabel>
+              <InputLabel>Датасет</InputLabel>
               <Select
                 value={selectedDataset}
+                label="Датасет"
                 onChange={(e) => setSelectedDataset(e.target.value as string)}
               >
                 {datasets.map((dataset) => (
@@ -507,9 +543,10 @@ const AnalysisPage: React.FC = () => {
             </FormControl>
 
             <FormControl fullWidth>
-              <InputLabel>Explainer Type</InputLabel>
+              <InputLabel>Метод объяснения</InputLabel>
               <Select
                 value={explainerType}
+                label="Метод объяснения"
                 onChange={(e) => setExplainerType(e.target.value as 'shap' | 'lime')}
               >
                 <MenuItem value="shap">SHAP</MenuItem>
@@ -523,7 +560,7 @@ const AnalysisPage: React.FC = () => {
               onClick={startAnalysis}
               disabled={loading || !selectedModel || !selectedDataset}
             >
-              Start Analysis
+              Запустить анализ
             </Button>
           </Box>
         </Paper>
@@ -532,7 +569,7 @@ const AnalysisPage: React.FC = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
             <CircularProgress />
             <Typography>
-              Analysis in progress... Status: {analysisStatus}
+              Анализ выполняется. Статус: {formatStatus(analysisStatus)}
             </Typography>
           </Box>
         )}
@@ -540,7 +577,7 @@ const AnalysisPage: React.FC = () => {
         {results && (
           <Box>
             <Alert severity="success" sx={{ mb: 3 }}>
-              Analysis completed successfully!
+              Анализ успешно завершен
             </Alert>
 
             {renderMetrics()}
@@ -552,16 +589,16 @@ const AnalysisPage: React.FC = () => {
             <Card sx={{ mt: 3 }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  Analysis Summary
+                  Сводка анализа
                 </Typography>
                 <Typography variant="body2">
-                  Samples analyzed: {results.num_samples || 'N/A'}
+                  Проанализировано объектов: {results.num_samples || 'Нет данных'}
                 </Typography>
                 <Typography variant="body2">
-                  Features: {results.num_features || 'N/A'}
+                  Признаков: {results.num_features || 'Нет данных'}
                 </Typography>
                 <Typography variant="body2">
-                  Explainer: {explainerType.toUpperCase()}
+                  Метод объяснения: {explainerType.toUpperCase()}
                 </Typography>
               </CardContent>
             </Card>
@@ -572,25 +609,25 @@ const AnalysisPage: React.FC = () => {
       {/* Previous Analyses List */}
       <Box sx={{ mt: 4 }}>
         <Typography variant="h5" gutterBottom>
-          Previous Analyses
+          История анализов
         </Typography>
         <TableContainer component={Paper}>
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Model</TableCell>
-                <TableCell>Dataset</TableCell>
-                <TableCell>Method</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Actions</TableCell>
+                <TableCell>Модель</TableCell>
+                <TableCell>Датасет</TableCell>
+                <TableCell>Метод</TableCell>
+                <TableCell>Статус</TableCell>
+                <TableCell>Дата создания</TableCell>
+                <TableCell>Действия</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {analyses.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} align="center">
-                    No analyses yet
+                    Анализов пока нет
                   </TableCell>
                 </TableRow>
               ) : (
@@ -607,9 +644,9 @@ const AnalysisPage: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={analysis.status}
+                        label={formatStatus(analysis.status)}
                         size="small"
-                        color={getStatusColor(analysis.status) as any}
+                        color={getStatusColor(analysis.status)}
                       />
                     </TableCell>
                     <TableCell>{formatDate(analysis.created_at)}</TableCell>
@@ -619,6 +656,7 @@ const AnalysisPage: React.FC = () => {
                           color="primary"
                           onClick={() => navigate(`/analysis/${analysis.id}/results`)}
                           size="small"
+                          aria-label="Открыть результаты анализа"
                         >
                           <VisibilityIcon />
                         </IconButton>

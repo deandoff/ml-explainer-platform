@@ -30,7 +30,7 @@ const LoginPage: React.FC = () => {
       await login(email, password);
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(err.message || 'Не удалось войти');
     } finally {
       setLoading(false);
     }
@@ -48,11 +48,11 @@ const LoginPage: React.FC = () => {
       >
         <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
           <Typography component="h1" variant="h4" align="center" gutterBottom>
-            Sign In
+            Вход
           </Typography>
 
           <Typography variant="body2" align="center" color="text.secondary" sx={{ mb: 3 }}>
-            Welcome to ML Explainer Platform
+            Добро пожаловать на платформу объяснения ML-моделей
           </Typography>
 
           {error && (
@@ -67,7 +67,7 @@ const LoginPage: React.FC = () => {
               required
               fullWidth
               id="email"
-              label="Email Address"
+              label="Электронная почта"
               name="email"
               autoComplete="email"
               autoFocus
@@ -80,7 +80,7 @@ const LoginPage: React.FC = () => {
               required
               fullWidth
               name="password"
-              label="Password"
+              label="Пароль"
               type="password"
               id="password"
               autoComplete="current-password"
@@ -95,14 +95,14 @@ const LoginPage: React.FC = () => {
               sx={{ mt: 3, mb: 2 }}
               disabled={loading}
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? 'Выполняется вход...' : 'Войти'}
             </Button>
 
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2">
-                Don't have an account?{' '}
+                Нет учетной записи?{' '}
                 <Link component={RouterLink} to="/register" underline="hover">
-                  Sign Up
+                  Зарегистрироваться
                 </Link>
               </Typography>
             </Box>

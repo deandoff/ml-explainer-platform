@@ -85,9 +85,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setToken(access_token);
     } catch (error: any) {
       if (error.response?.status === 401) {
-        throw new Error('Invalid email or password');
+        throw new Error('Неверная электронная почта или пароль');
       }
-      throw new Error('Login failed. Please try again.');
+      throw new Error('Не удалось войти. Попробуйте еще раз.');
     }
   };
 
@@ -102,9 +102,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await login(email, password);
     } catch (error: any) {
       if (error.response?.status === 409) {
-        throw new Error('Email already registered');
+        throw new Error('Пользователь с такой электронной почтой уже зарегистрирован');
       }
-      throw new Error('Registration failed. Please try again.');
+      throw new Error('Не удалось зарегистрироваться. Попробуйте еще раз.');
     }
   };
 

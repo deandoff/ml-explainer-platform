@@ -28,12 +28,12 @@ const RegisterPage: React.FC = () => {
 
     // Validation
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError('Пароли не совпадают');
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError('Пароль должен содержать не менее 6 символов');
       return;
     }
 
@@ -43,7 +43,7 @@ const RegisterPage: React.FC = () => {
       await register(email, password);
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Registration failed');
+      setError(err.message || 'Не удалось зарегистрироваться');
     } finally {
       setLoading(false);
     }
@@ -61,11 +61,11 @@ const RegisterPage: React.FC = () => {
       >
         <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
           <Typography component="h1" variant="h4" align="center" gutterBottom>
-            Sign Up
+            Регистрация
           </Typography>
 
           <Typography variant="body2" align="center" color="text.secondary" sx={{ mb: 3 }}>
-            Create your account to start explaining ML models
+            Создайте учетную запись, чтобы анализировать решения ML-моделей
           </Typography>
 
           {error && (
@@ -80,7 +80,7 @@ const RegisterPage: React.FC = () => {
               required
               fullWidth
               id="email"
-              label="Email Address"
+              label="Электронная почта"
               name="email"
               autoComplete="email"
               autoFocus
@@ -93,13 +93,13 @@ const RegisterPage: React.FC = () => {
               required
               fullWidth
               name="password"
-              label="Password"
+              label="Пароль"
               type="password"
               id="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              helperText="At least 6 characters"
+              helperText="Не менее 6 символов"
             />
 
             <TextField
@@ -107,7 +107,7 @@ const RegisterPage: React.FC = () => {
               required
               fullWidth
               name="confirmPassword"
-              label="Confirm Password"
+              label="Подтвердите пароль"
               type="password"
               id="confirmPassword"
               autoComplete="new-password"
@@ -122,14 +122,14 @@ const RegisterPage: React.FC = () => {
               sx={{ mt: 3, mb: 2 }}
               disabled={loading}
             >
-              {loading ? 'Creating account...' : 'Sign Up'}
+              {loading ? 'Создание учетной записи...' : 'Зарегистрироваться'}
             </Button>
 
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2">
-                Already have an account?{' '}
+                Уже есть учетная запись?{' '}
                 <Link component={RouterLink} to="/login" underline="hover">
-                  Sign In
+                  Войти
                 </Link>
               </Typography>
             </Box>

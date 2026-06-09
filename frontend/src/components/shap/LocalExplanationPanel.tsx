@@ -19,8 +19,10 @@ import CloseIcon from '@mui/icons-material/Close';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import Plot from 'react-plotly.js';
+import type { Data, Layout } from 'plotly.js';
 import { shapInteractiveAPI } from '../../api';
 import WhatIfAnalysis from './WhatIfAnalysis';
+import { russianPlotlyConfig } from '../../utils/plotlyConfig';
 
 interface LocalExplanation {
   sample_id: number;
@@ -40,8 +42,8 @@ interface LocalExplanation {
     end: number;
   }>;
   force_plot: {
-    positive: Array<any>;
-    negative: Array<any>;
+    positive: ForceContribution[];
+    negative: ForceContribution[];
   };
   explanation_quality: {
     sum_shap: number;
@@ -49,6 +51,16 @@ interface LocalExplanation {
     consistency_error: number;
   };
 }
+
+interface ForceContribution {
+  feature: string;
+  value: number;
+  shap_value: number;
+}
+
+type BarTraceWithBase = Data & {
+  base: number[];
+};
 
 interface Props {
   analysisId: string;
@@ -97,7 +109,7 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
     const base = waterfallData.map(d => d.start);
     const colors = waterfallData.map(d => d.shap_value > 0 ? '#ff6b6b' : '#4dabf7');
 
-    const trace = {
+    const trace: BarTraceWithBase = {
       type: 'bar',
       orientation: 'h',
       x: x,
@@ -110,20 +122,20 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
       textposition: 'outside',
       hovertemplate:
         '<b>%{y}</b><br>' +
-        'SHAP value: %{x:.4f}<br>' +
+        'Значение SHAP: %{x:.4f}<br>' +
         '<extra></extra>'
     };
 
-    const layout = {
-      title: 'Waterfall Plot - Feature Contributions',
+    const layout: Partial<Layout> = {
+      title: { text: 'Каскадный график вкладов признаков' },
       xaxis: {
-        title: 'Model Output',
+        title: { text: 'Выход модели' },
         zeroline: true,
         zerolinecolor: 'black',
         zerolinewidth: 2
       },
       yaxis: {
-        title: '',
+        title: { text: '' },
         automargin: true
       },
       height: 500,
@@ -160,14 +172,14 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
         {
           x: explanation.base_value,
           y: -0.8,
-          text: `Base: ${explanation.base_value.toFixed(4)}`,
+          text: `Базовое значение: ${explanation.base_value.toFixed(4)}`,
           showarrow: false,
           font: { color: 'green', size: 12 }
         },
         {
           x: explanation.prediction,
           y: -0.8,
-          text: `Prediction: ${explanation.prediction.toFixed(4)}`,
+          text: `Предсказание: ${explanation.prediction.toFixed(4)}`,
           showarrow: false,
           font: { color: 'purple', size: 12 }
         }
@@ -176,9 +188,9 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
 
     return (
       <Plot
-        data={[trace] as any}
-        layout={layout as any}
-        config={{ responsive: true, displaylogo: false }}
+        data={[trace]}
+        layout={layout}
+        config={{ ...russianPlotlyConfig, responsive: true, displaylogo: false }}
         style={{ width: '100%' }}
       />
     );
@@ -190,80 +202,68 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
     const positive = explanation.force_plot.positive;
     const negative = explanation.force_plot.negative;
 
+    const renderContributionTable = (
+      contributions: ForceContribution[],
+      title: string,
+      color: 'error' | 'primary',
+      icon: React.ReactElement,
+      formatImpact: (value: number) => string
+    ) => (
+      <Box sx={{ flex: 1 }}>
+        <Typography variant="subtitle2" color={color} gutterBottom>
+          {title} (признаков: {contributions.length})
+        </Typography>
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Признак</TableCell>
+                <TableCell align="right">Значение</TableCell>
+                <TableCell align="right">Влияние</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {contributions.map((contrib) => (
+                <TableRow key={contrib.feature}>
+                  <TableCell>{contrib.feature}</TableCell>
+                  <TableCell align="right">{contrib.value.toFixed(4)}</TableCell>
+                  <TableCell align="right">
+                    <Chip
+                      label={formatImpact(contrib.shap_value)}
+                      size="small"
+                      color={color}
+                      icon={icon}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Box>
+    );
+
     return (
       <Box>
         <Typography variant="h6" gutterBottom>
-          Force Plot - Push/Pull Analysis
+          Силовой график влияния признаков
         </Typography>
 
         <Box sx={{ display: 'flex', gap: 3, mt: 3 }}>
-          {/* Positive contributions */}
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle2" color="error" gutterBottom>
-              Pushing Higher ({positive.length} features)
-            </Typography>
-            <TableContainer component={Paper} variant="outlined">
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Feature</TableCell>
-                    <TableCell align="right">Value</TableCell>
-                    <TableCell align="right">Impact</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {positive.map((contrib, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>{contrib.feature}</TableCell>
-                      <TableCell align="right">{contrib.value.toFixed(4)}</TableCell>
-                      <TableCell align="right">
-                        <Chip
-                          label={`+${contrib.shap_value.toFixed(4)}`}
-                          size="small"
-                          color="error"
-                          icon={<ArrowUpwardIcon />}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Box>
-
-          {/* Negative contributions */}
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="subtitle2" color="primary" gutterBottom>
-              Pushing Lower ({negative.length} features)
-            </Typography>
-            <TableContainer component={Paper} variant="outlined">
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Feature</TableCell>
-                    <TableCell align="right">Value</TableCell>
-                    <TableCell align="right">Impact</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {negative.map((contrib, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>{contrib.feature}</TableCell>
-                      <TableCell align="right">{contrib.value.toFixed(4)}</TableCell>
-                      <TableCell align="right">
-                        <Chip
-                          label={contrib.shap_value.toFixed(4)}
-                          size="small"
-                          color="primary"
-                          icon={<ArrowDownwardIcon />}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Box>
+          {renderContributionTable(
+            positive,
+            'Повышают предсказание',
+            'error',
+            <ArrowUpwardIcon />,
+            (value) => `+${value.toFixed(4)}`
+          )}
+          {renderContributionTable(
+            negative,
+            'Понижают предсказание',
+            'primary',
+            <ArrowDownwardIcon />,
+            (value) => value.toFixed(4)
+          )}
         </Box>
       </Box>
     );
@@ -277,11 +277,11 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Rank</TableCell>
-              <TableCell>Feature</TableCell>
-              <TableCell align="right">Feature Value</TableCell>
-              <TableCell align="right">SHAP Value</TableCell>
-              <TableCell align="right">Abs Impact</TableCell>
+              <TableCell>Место</TableCell>
+              <TableCell>Признак</TableCell>
+              <TableCell align="right">Значение признака</TableCell>
+              <TableCell align="right">Значение SHAP</TableCell>
+              <TableCell align="right">Абсолютное влияние</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -320,7 +320,7 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
   if (!explanation) {
     return (
       <Paper sx={{ p: 3 }}>
-        <Typography color="error">Failed to load explanation</Typography>
+        <Typography color="error">Не удалось загрузить объяснение</Typography>
       </Paper>
     );
   }
@@ -338,28 +338,28 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h5" color="secondary">
-            Local Explanation - Sample {explanation.sample_id}
+            Локальное объяснение для объекта {explanation.sample_id}
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, mt: 1, flexWrap: 'wrap' }}>
             <Chip
-              label={`Base Value: ${explanation.base_value.toFixed(4)}`}
+              label={`Базовое значение: ${explanation.base_value.toFixed(4)}`}
               size="small"
               color="success"
             />
             <Chip
-              label={`Prediction: ${explanation.prediction.toFixed(4)}`}
+              label={`Предсказание: ${explanation.prediction.toFixed(4)}`}
               size="small"
               color="secondary"
             />
             <Chip
-              label={`Consistency Error: ${explanation.explanation_quality.consistency_error.toFixed(6)}`}
+              label={`Ошибка согласованности: ${explanation.explanation_quality.consistency_error.toFixed(6)}`}
               size="small"
               color={explanation.explanation_quality.consistency_error < 0.001 ? 'success' : 'warning'}
             />
           </Box>
         </Box>
         {onClose && (
-          <IconButton onClick={onClose} size="small">
+          <IconButton onClick={onClose} size="small" aria-label="Закрыть локальное объяснение">
             <CloseIcon />
           </IconButton>
         )}
@@ -367,10 +367,10 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
 
       {/* Tabs */}
       <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 2 }}>
-        <Tab label="Waterfall Plot" />
-        <Tab label="Force Plot" />
-        <Tab label="Feature Table" />
-        <Tab label="What-If Analysis" />
+        <Tab label="Каскадный график" />
+        <Tab label="Силовой график" />
+        <Tab label="Таблица признаков" />
+        <Tab label="Анализ «что, если»" />
       </Tabs>
 
       {/* Content */}

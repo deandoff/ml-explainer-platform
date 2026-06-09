@@ -2,6 +2,8 @@ import React, { useMemo, useCallback } from 'react';
 import Plot from 'react-plotly.js';
 import { Box, Typography, Chip, Tooltip } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import type { Data, Layout } from 'plotly.js';
+import { russianPlotlyConfig } from '../../utils/plotlyConfig';
 
 interface SHAPData {
   points: Array<{
@@ -42,7 +44,7 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
   selectedFeature = null
 }) => {
   // Prepare data for Plotly
-  const plotData = useMemo(() => {
+  const plotData = useMemo<Data[]>(() => {
     if (!data) return [];
 
     // Sort features by importance
@@ -51,7 +53,6 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
       .slice(0, maxFeatures)
       .map(([name]) => name);
 
-    // Create trace for each feature
     return sortedFeatures.map((featureName, featureIdx) => {
       const points = data.points.map(p => ({
         x: p.features[featureName]?.shap_value || 0,
@@ -79,7 +80,7 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
           showscale: featureIdx === 0,
           colorbar: {
             title: {
-              text: 'Feature<br>Value',
+              text: 'Значение<br>признака',
               side: 'right'
             },
             x: 1.02,
@@ -102,32 +103,32 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
         },
         hovertemplate:
           '<b>%{fullData.name}</b><br>' +
-          'SHAP value: %{x:.4f}<br>' +
-          'Feature value: %{customdata[1]:.4f}<br>' +
-          'Prediction: %{customdata[2]:.4f}<br>' +
-          'Sample ID: %{customdata[0]}<br>' +
+          'Значение SHAP: %{x:.4f}<br>' +
+          'Значение признака: %{customdata[1]:.4f}<br>' +
+          'Предсказание: %{customdata[2]:.4f}<br>' +
+          'Идентификатор объекта: %{customdata[0]}<br>' +
           '<extra></extra>'
       };
     });
   }, [data, selectedSamples, maxFeatures, selectedFeature]);
 
-  const layout = useMemo(() => ({
+  const layout = useMemo<Partial<Layout>>(() => ({
     title: {
-      text: 'SHAP Summary Plot (Interactive)',
+      text: 'Сводный график SHAP',
       font: { size: 16, weight: 600 }
     },
     xaxis: {
-      title: 'SHAP value (impact on model output)',
+      title: { text: 'Значение SHAP (влияние на выход модели)' },
       zeroline: true,
       zerolinecolor: 'rgba(0,0,0,0.3)',
       zerolinewidth: 2,
       gridcolor: 'rgba(0,0,0,0.1)'
     },
     yaxis: {
-      title: '',
+      title: { text: '' },
       tickmode: 'array',
       tickvals: plotData.map((_, i) => i),
-      ticktext: plotData.map(d => d.name),
+      ticktext: plotData.map(d => String(d.name ?? '')),
       automargin: true,
       gridcolor: 'rgba(0,0,0,0.05)'
     },
@@ -163,7 +164,7 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
   if (!data) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
-        <Typography color="text.secondary">No data available</Typography>
+        <Typography color="text.secondary">Нет данных для отображения</Typography>
       </Box>
     );
   }
@@ -172,23 +173,23 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
     <Box>
       {/* Instructions */}
       <Box sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Tooltip title="Click on any point to see detailed local explanation for that sample">
+        <Tooltip title="Нажмите на точку, чтобы увидеть подробное локальное объяснение для объекта">
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <InfoOutlinedIcon fontSize="small" color="action" />
             <Typography variant="caption" color="text.secondary">
-              Click point for details
+              Нажмите на точку для подробностей
             </Typography>
           </Box>
         </Tooltip>
         <Typography variant="caption" color="text.secondary">•</Typography>
         <Typography variant="caption" color="text.secondary">
-          Shift+Click to compare
+          Shift+щелчок для сравнения
         </Typography>
         {onFeatureClick && (
           <>
             <Typography variant="caption" color="text.secondary">•</Typography>
             <Typography variant="caption" color="text.secondary">
-              Click feature name for interactions
+              Нажмите на признак для анализа взаимодействий
             </Typography>
           </>
         )}
@@ -196,9 +197,10 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
 
       {/* Plot */}
       <Plot
-        data={plotData as any}
-        layout={layout as any}
+        data={plotData}
+        layout={layout}
         config={{
+          ...russianPlotlyConfig,
           responsive: true,
           displayModeBar: true,
           displaylogo: false,
@@ -212,13 +214,13 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
       {selectedSamples.length > 0 && (
         <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(25, 118, 210, 0.08)', borderRadius: 1 }}>
           <Typography variant="caption" fontWeight={600} color="primary">
-            Selected for comparison ({selectedSamples.length}/4):
+            Выбрано для сравнения ({selectedSamples.length}/4):
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
             {selectedSamples.map(id => (
               <Chip
                 key={id}
-                label={`Sample ${id}`}
+                label={`Объект ${id}`}
                 onDelete={onAddToComparison ? () => onAddToComparison(id) : undefined}
                 size="small"
                 color="primary"
@@ -233,18 +235,21 @@ const InteractiveSummaryPlot: React.FC<Props> = ({
       {onFeatureClick && (
         <Box sx={{ mt: 2 }}>
           <Typography variant="caption" color="text.secondary" gutterBottom>
-            Click feature name to explore interactions:
+            Нажмите на признак, чтобы изучить взаимодействия:
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-            {plotData.slice(0, 10).map(d => (
+            {plotData.slice(0, 10).map(d => {
+              const featureName = String(d.name ?? '');
+              return (
               <Chip
-                key={d.name}
-                label={d.name}
+                key={featureName}
+                label={featureName}
                 size="small"
-                onClick={() => handleFeatureNameClick(d.name)}
+                onClick={() => handleFeatureNameClick(featureName)}
                 sx={{ cursor: 'pointer' }}
               />
-            ))}
+              );
+            })}
           </Box>
         </Box>
       )}

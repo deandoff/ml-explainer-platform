@@ -43,7 +43,6 @@ const FilterPanel: React.FC<Props> = ({
   onFilterChange,
   activeFiltersCount
 }) => {
-  // Initialize filter state from data
   const [filters, setFilters] = useState<FilterState>({
     shapRange: [-1, 1],
     predictionRange: [0, 1],
@@ -121,7 +120,6 @@ const FilterPanel: React.FC<Props> = ({
     onFilterChange(resetFilters);
   };
 
-  // Get top features for filtering
   const topFeatures = shapData?.feature_importance
     ? Object.entries(shapData.feature_importance)
         .sort((a: any, b: any) => b[1].mean_abs_shap - a[1].mean_abs_shap)
@@ -129,7 +127,6 @@ const FilterPanel: React.FC<Props> = ({
         .map(([name]) => name)
     : [];
 
-  // Get feature value ranges
   const getFeatureRange = (featureName: string): [number, number] => {
     if (!shapData?.points) return [0, 1];
 
@@ -155,10 +152,10 @@ const FilterPanel: React.FC<Props> = ({
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h6">Filters</Typography>
+          <Typography variant="h6">Фильтры</Typography>
           {activeFiltersCount > 0 && (
             <Chip
-              label={`${activeFiltersCount} active`}
+              label={`Активных: ${activeFiltersCount}`}
               size="small"
               color="primary"
             />
@@ -171,7 +168,7 @@ const FilterPanel: React.FC<Props> = ({
             size="small"
             disabled={activeFiltersCount === 0}
           >
-            Reset
+            Сбросить
           </Button>
           <IconButton size="small" onClick={onClose}>
             <CloseIcon />
@@ -185,7 +182,7 @@ const FilterPanel: React.FC<Props> = ({
         {/* SHAP Value Range */}
         <Grid item xs={12} md={6}>
           <Typography variant="subtitle2" gutterBottom>
-            SHAP Value Range
+            Диапазон значений SHAP
           </Typography>
           <Box sx={{ px: 2, pt: 1 }}>
             <Slider
@@ -196,13 +193,13 @@ const FilterPanel: React.FC<Props> = ({
               max={shapData?.summary_stats?.shap_range?.max || 1}
               step={0.01}
               marks={[
-                { value: shapData?.summary_stats?.shap_range?.min || -1, label: 'Min' },
+                { value: shapData?.summary_stats?.shap_range?.min || -1, label: 'Мин.' },
                 { value: 0, label: '0' },
-                { value: shapData?.summary_stats?.shap_range?.max || 1, label: 'Max' }
+                { value: shapData?.summary_stats?.shap_range?.max || 1, label: 'Макс.' }
               ]}
             />
             <Typography variant="caption" color="text.secondary">
-              {filters.shapRange[0].toFixed(2)} to {filters.shapRange[1].toFixed(2)}
+              От {filters.shapRange[0].toFixed(2)} до {filters.shapRange[1].toFixed(2)}
             </Typography>
           </Box>
         </Grid>
@@ -210,7 +207,7 @@ const FilterPanel: React.FC<Props> = ({
         {/* Prediction Range */}
         <Grid item xs={12} md={6}>
           <Typography variant="subtitle2" gutterBottom>
-            Prediction Range
+            Диапазон предсказаний
           </Typography>
           <Box sx={{ px: 2, pt: 1 }}>
             <Slider
@@ -221,12 +218,12 @@ const FilterPanel: React.FC<Props> = ({
               max={shapData?.summary_stats?.prediction_max || 1}
               step={0.01}
               marks={[
-                { value: shapData?.summary_stats?.prediction_min || 0, label: 'Min' },
-                { value: shapData?.summary_stats?.prediction_max || 1, label: 'Max' }
+                { value: shapData?.summary_stats?.prediction_min || 0, label: 'Мин.' },
+                { value: shapData?.summary_stats?.prediction_max || 1, label: 'Макс.' }
               ]}
             />
             <Typography variant="caption" color="text.secondary">
-              {filters.predictionRange[0].toFixed(2)} to {filters.predictionRange[1].toFixed(2)}
+              От {filters.predictionRange[0].toFixed(2)} до {filters.predictionRange[1].toFixed(2)}
             </Typography>
           </Box>
         </Grid>
@@ -236,7 +233,7 @@ const FilterPanel: React.FC<Props> = ({
           <Accordion>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Typography variant="subtitle2">
-                Feature Value Filters (Top 5 Features)
+                Фильтры значений признаков (5 самых важных)
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
@@ -260,7 +257,7 @@ const FilterPanel: React.FC<Props> = ({
                           step={(range[1] - range[0]) / 100}
                         />
                         <Typography variant="caption" color="text.secondary">
-                          {currentRange[0].toFixed(2)} to {currentRange[1].toFixed(2)}
+                          От {currentRange[0].toFixed(2)} до {currentRange[1].toFixed(2)}
                         </Typography>
                       </Box>
                     </Grid>
@@ -274,7 +271,7 @@ const FilterPanel: React.FC<Props> = ({
         {/* Quick Filters */}
         <Grid item xs={12}>
           <Typography variant="subtitle2" gutterBottom>
-            Quick Filters
+            Быстрые фильтры
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             <FormControlLabel
@@ -284,7 +281,7 @@ const FilterPanel: React.FC<Props> = ({
                   onChange={() => handleCheckboxChange('showOutliers')}
                 />
               }
-              label="Show only outliers"
+              label="Показывать только выбросы"
             />
             <FormControlLabel
               control={
@@ -293,7 +290,7 @@ const FilterPanel: React.FC<Props> = ({
                   onChange={() => handleCheckboxChange('showHighConfidence')}
                 />
               }
-              label="High confidence (>0.8)"
+              label="Высокая уверенность (>0,8)"
             />
             <FormControlLabel
               control={
@@ -302,7 +299,7 @@ const FilterPanel: React.FC<Props> = ({
                   onChange={() => handleCheckboxChange('showLowConfidence')}
                 />
               }
-              label="Low confidence (<0.5)"
+              label="Низкая уверенность (<0,5)"
             />
           </Box>
         </Grid>
@@ -315,7 +312,7 @@ const FilterPanel: React.FC<Props> = ({
           onClick={handleApply}
           size="large"
         >
-          Apply Filters
+          Применить фильтры
         </Button>
       </Box>
     </Paper>
