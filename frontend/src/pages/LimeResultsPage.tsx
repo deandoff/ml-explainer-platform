@@ -21,10 +21,9 @@ import {
   Slider,
   TextField,
   Divider,
-  Stack,
   LinearProgress,
   Tooltip,
-} from '@mui/material';
+} from "@mui/material";
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ThumbUpIcon from '@mui/icons-material/ThumbUp';
 import ThumbDownIcon from '@mui/icons-material/ThumbDown';
@@ -34,6 +33,8 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import Plot from 'react-plotly.js';
 import { analysesAPI } from '../api';
+import { formatMetricName } from '../utils/localization';
+import { russianPlotlyConfig } from '../utils/plotlyConfig';
 
 const LimeResultsPage: React.FC = () => {
   const { analysisId } = useParams<{ analysisId: string }>();
@@ -87,7 +88,7 @@ const LimeResultsPage: React.FC = () => {
     return (
       <Container maxWidth="xl">
         <Box sx={{ my: 4 }}>
-          <Alert severity="error">Failed to load analysis results</Alert>
+          <Alert severity="error">Не удалось загрузить результаты анализа</Alert>
         </Box>
       </Container>
     );
@@ -113,32 +114,33 @@ const LimeResultsPage: React.FC = () => {
   const positiveContribution = positiveFeatures.reduce((sum, [, val]) => sum + (val as number), 0);
   const negativeContribution = negativeFeatures.reduce((sum, [, val]) => sum + (val as number), 0);
   const totalContribution = positiveContribution + negativeContribution;
+  const totalContributionMagnitude = Math.abs(totalContribution) || 1;
 
   // Generate improved plain English explanation
   const generateExplanation = () => {
     const topPositive = positiveFeatures.slice(0, 2);
     const topNegative = negativeFeatures.slice(0, 2);
 
-    let explanation = `The model predicted Class ${predictedClass} with ${(confidence * 100).toFixed(1)}% confidence. `;
+    let explanation = `Модель предсказала класс ${predictedClass} с уверенностью ${(confidence * 100).toFixed(1)}%. `;
 
     if (topPositive.length > 0) {
-      const mainFactors = topPositive.map(([name]) => name).join(' and ');
-      explanation += `This prediction is primarily driven by ${mainFactors}, which strongly increased the likelihood. `;
+      const mainFactors = topPositive.map(([name]) => formatFeatureName(name)).join(' и ');
+      explanation += `Основное положительное влияние оказали признаки ${mainFactors}. `;
     }
 
     if (topNegative.length > 0) {
-      const negativeFactors = topNegative.map(([name]) => name).join(' and ');
-      explanation += `Although ${negativeFactors} had a negative impact, `;
+      const negativeFactors = topNegative.map(([name]) => formatFeatureName(name)).join(' и ');
+      explanation += `Признаки ${negativeFactors} снизили итоговую оценку, но `;
 
       if (Math.abs(negativeContribution) < positiveContribution * 0.5) {
-        explanation += `their influence was not strong enough to change the outcome. `;
+        explanation += `их влияния оказалось недостаточно, чтобы изменить результат. `;
       } else {
-        explanation += `they significantly reduced the prediction score. `;
+        explanation += `их влияние заметно уменьшило вероятность выбранного класса. `;
       }
     }
 
     const nonZeroCount = Object.values(featureImportance).filter(v => Math.abs(v as number) > 0.001).length;
-    explanation += `In total, ${nonZeroCount} out of ${Object.keys(featureImportance).length} features actively contributed to this prediction.`;
+    explanation += `Всего на предсказание заметно повлияли ${nonZeroCount} из ${Object.keys(featureImportance).length} признаков.`;
 
     return explanation;
   };
@@ -172,22 +174,22 @@ const LimeResultsPage: React.FC = () => {
     else if (activeCount <= 10) trustScore += 20;
     else if (activeCount <= 15) trustScore += 10;
 
-    let level = 'Low';
+    let level = 'Низкая';
     let color: 'error' | 'warning' | 'success' = 'error';
     let message = '';
 
     if (trustScore >= 70) {
-      level = 'High';
+      level = 'Высокая';
       color = 'success';
-      message = 'The explanation is reliable. A few key features clearly dominate the prediction.';
+      message = 'Объяснение надежно: несколько ключевых признаков явно определяют предсказание.';
     } else if (trustScore >= 50) {
-      level = 'Medium';
+      level = 'Средняя';
       color = 'warning';
-      message = 'The explanation is moderately reliable. Multiple features contribute, but the pattern is clear.';
+      message = 'Объяснение умеренно надежно: влияет несколько признаков, но общая закономерность прослеживается.';
     } else {
-      level = 'Low';
+      level = 'Низкая';
       color = 'error';
-      message = 'The explanation may be unstable. Contribution is spread across many features with no clear dominant factor.';
+      message = 'Объяснение может быть нестабильным: вклад распределен между многими признаками без явного лидера.';
     }
 
     return {
@@ -203,7 +205,35 @@ const LimeResultsPage: React.FC = () => {
 
   const trustInfo = calculateTrustScore();
 
-  // Check for consistency warnings
+  const renderTopFactor = (
+    feature: string,
+    value: unknown,
+    idx: number,
+    color: 'success' | 'error',
+    backgroundColor: string,
+    showPositiveSign: boolean
+  ) => {
+    const contribution = value as number;
+    return (
+      <Paper key={feature} sx={{ p: 2, mb: 2, bgcolor: backgroundColor }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Typography variant="body1" fontWeight="bold">
+            #{idx + 1} {formatFeatureName(feature)}
+          </Typography>
+          <Chip
+            label={`${showPositiveSign ? '+' : ''}${contribution.toFixed(3)}`}
+            size="small"
+            color={color}
+            sx={{ fontWeight: 'bold' }}
+          />
+        </Box>
+        <Typography variant="caption" color="text.secondary">
+          Вклад: {(contribution / totalContributionMagnitude * 100).toFixed(1)}% от общего изменения
+        </Typography>
+      </Paper>
+    );
+  };
+
   const getConsistencyWarnings = () => {
     const warnings = [];
 
@@ -211,7 +241,7 @@ const LimeResultsPage: React.FC = () => {
     if (confidence > 0.8 && trustInfo.score < 50) {
       warnings.push({
         severity: 'warning' as const,
-        message: 'Model confidence is high (>80%), but no single feature strongly explains the prediction. Interpret with caution.'
+        message: 'Уверенность модели высокая (>80%), но ни один признак не дает убедительного объяснения. Интерпретируйте результат с осторожностью.'
       });
     }
 
@@ -219,7 +249,7 @@ const LimeResultsPage: React.FC = () => {
     if (trustInfo.activeFeatures > 15 && parseFloat(trustInfo.dominantShare) < 20) {
       warnings.push({
         severity: 'warning' as const,
-        message: 'Many features contribute equally. The prediction may be sensitive to small changes in multiple features.'
+        message: 'Многие признаки влияют почти одинаково. Предсказание может быть чувствительно к небольшим изменениям сразу нескольких признаков.'
       });
     }
 
@@ -227,7 +257,7 @@ const LimeResultsPage: React.FC = () => {
     if (confidence < 0.6) {
       warnings.push({
         severity: 'info' as const,
-        message: 'Model confidence is below 60%. Consider this when interpreting the explanation.'
+        message: 'Уверенность модели ниже 60%. Учитывайте это при интерпретации объяснения.'
       });
     }
 
@@ -238,7 +268,7 @@ const LimeResultsPage: React.FC = () => {
 
   // Format feature name (remove technical prefixes if needed)
   const formatFeatureName = (name: string) => {
-    return name.replace('feature_', 'Feature ');
+    return name.replace('feature_', 'Признак ');
   };
 
   return (
@@ -251,10 +281,10 @@ const LimeResultsPage: React.FC = () => {
             onClick={() => navigate('/analysis')}
             sx={{ mr: 2 }}
           >
-            Back to Analysis
+            Вернуться к анализу
           </Button>
           <Typography variant="h4">
-            LIME Local Explanation
+            Локальное объяснение LIME
           </Typography>
         </Box>
 
@@ -275,24 +305,24 @@ const LimeResultsPage: React.FC = () => {
             <Card sx={{ height: '100%', bgcolor: '#1976d2', color: 'white' }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                  Final Prediction
+                  Итоговое предсказание
                 </Typography>
                 <Typography variant="h2" sx={{ my: 2, fontWeight: 'bold' }}>
-                  Class {predictedClass}
+                  Класс {predictedClass}
                 </Typography>
                 <Typography variant="h6" sx={{ mb: 2 }}>
-                  Confidence: {(confidence * 100).toFixed(1)}%
+                  Уверенность: {(confidence * 100).toFixed(1)}%
                 </Typography>
 
                 <Divider sx={{ my: 2, bgcolor: 'rgba(255,255,255,0.3)' }} />
 
                 <Typography variant="subtitle2" gutterBottom sx={{ opacity: 0.9 }}>
-                  Probability Distribution
+                  Распределение вероятностей
                 </Typography>
                 {predictionProba.map((prob: number, idx: number) => (
                   <Box key={idx} sx={{ mb: 1.5 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="body2">Class {idx}</Typography>
+                      <Typography variant="body2">Класс {idx}</Typography>
                       <Typography variant="body2" fontWeight="bold">{(prob * 100).toFixed(1)}%</Typography>
                     </Box>
                     <LinearProgress
@@ -317,21 +347,21 @@ const LimeResultsPage: React.FC = () => {
             <Card sx={{ height: '100%', bgcolor: '#f5f5f5' }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                  Prediction Breakdown
+                  Структура предсказания
                 </Typography>
                 <Typography variant="body2" color="text.secondary" paragraph>
-                  How the model arrived at the final prediction
+                  Как модель пришла к итоговому предсказанию
                 </Typography>
 
                 <Box sx={{ mt: 3 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                    <Typography variant="body1">Baseline Probability</Typography>
+                    <Typography variant="body1">Базовая вероятность</Typography>
                     <Chip label={`${(baselineProbability * 100).toFixed(1)}%`} size="small" />
                   </Box>
 
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     <TrendingUpIcon sx={{ color: 'success.main', mr: 1 }} />
-                    <Typography variant="body1" sx={{ flexGrow: 1 }}>Positive Contributions</Typography>
+                    <Typography variant="body1" sx={{ flexGrow: 1 }}>Положительные вклады</Typography>
                     <Typography variant="body1" color="success.main" fontWeight="bold">
                       +{(positiveContribution * 100).toFixed(1)}%
                     </Typography>
@@ -339,7 +369,7 @@ const LimeResultsPage: React.FC = () => {
 
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     <TrendingDownIcon sx={{ color: 'error.main', mr: 1 }} />
-                    <Typography variant="body1" sx={{ flexGrow: 1 }}>Negative Contributions</Typography>
+                    <Typography variant="body1" sx={{ flexGrow: 1 }}>Отрицательные вклады</Typography>
                     <Typography variant="body1" color="error.main" fontWeight="bold">
                       {(negativeContribution * 100).toFixed(1)}%
                     </Typography>
@@ -348,7 +378,7 @@ const LimeResultsPage: React.FC = () => {
                   <Divider sx={{ my: 2 }} />
 
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6" fontWeight="bold">Final Probability</Typography>
+                    <Typography variant="h6" fontWeight="bold">Итоговая вероятность</Typography>
                     <Typography variant="h5" color="primary" fontWeight="bold">
                       {(confidence * 100).toFixed(1)}%
                     </Typography>
@@ -356,7 +386,7 @@ const LimeResultsPage: React.FC = () => {
 
                   <Box sx={{ mt: 2, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Net Change: {totalContribution >= 0 ? '+' : ''}{(totalContribution * 100).toFixed(1)}% from baseline
+                      Изменение относительно базового уровня: {totalContribution >= 0 ? '+' : ''}{(totalContribution * 100).toFixed(1)}%
                     </Typography>
                   </Box>
                 </Box>
@@ -372,29 +402,14 @@ const LimeResultsPage: React.FC = () => {
               <CardContent>
                 <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 'bold' }}>
                   <ThumbUpIcon sx={{ mr: 1, color: 'success.main' }} />
-                  Top Positive Factors
+                  Главные положительные факторы
                 </Typography>
                 <Typography variant="body2" color="text.secondary" paragraph>
-                  Features that increased the prediction score
+                  Признаки, повысившие оценку предсказания
                 </Typography>
-                {positiveFeatures.slice(0, 3).map(([feature, value], idx) => (
-                  <Paper key={feature} sx={{ p: 2, mb: 2, bgcolor: 'rgba(76, 175, 80, 0.1)' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body1" fontWeight="bold">
-                        #{idx + 1} {formatFeatureName(feature)}
-                      </Typography>
-                      <Chip
-                        label={`+${(value as number).toFixed(3)}`}
-                        size="small"
-                        color="success"
-                        sx={{ fontWeight: 'bold' }}
-                      />
-                    </Box>
-                    <Typography variant="caption" color="text.secondary">
-                      Contribution: {((value as number) / Math.abs(totalContribution) * 100).toFixed(1)}% of total change
-                    </Typography>
-                  </Paper>
-                ))}
+                {positiveFeatures.slice(0, 3).map(([feature, value], idx) =>
+                  renderTopFactor(feature, value, idx, 'success', 'rgba(76, 175, 80, 0.1)', true)
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -404,29 +419,14 @@ const LimeResultsPage: React.FC = () => {
               <CardContent>
                 <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 'bold' }}>
                   <ThumbDownIcon sx={{ mr: 1, color: 'error.main' }} />
-                  Top Negative Factors
+                  Главные отрицательные факторы
                 </Typography>
                 <Typography variant="body2" color="text.secondary" paragraph>
-                  Features that decreased the prediction score
+                  Признаки, снизившие оценку предсказания
                 </Typography>
-                {negativeFeatures.slice(0, 3).map(([feature, value], idx) => (
-                  <Paper key={feature} sx={{ p: 2, mb: 2, bgcolor: 'rgba(244, 67, 54, 0.1)' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body1" fontWeight="bold">
-                        #{idx + 1} {formatFeatureName(feature)}
-                      </Typography>
-                      <Chip
-                        label={`${(value as number).toFixed(3)}`}
-                        size="small"
-                        color="error"
-                        sx={{ fontWeight: 'bold' }}
-                      />
-                    </Box>
-                    <Typography variant="caption" color="text.secondary">
-                      Contribution: {((value as number) / Math.abs(totalContribution) * 100).toFixed(1)}% of total change
-                    </Typography>
-                  </Paper>
-                ))}
+                {negativeFeatures.slice(0, 3).map(([feature, value], idx) =>
+                  renderTopFactor(feature, value, idx, 'error', 'rgba(244, 67, 54, 0.1)', false)
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -437,7 +437,7 @@ const LimeResultsPage: React.FC = () => {
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 'bold' }}>
               <InfoIcon sx={{ mr: 1 }} />
-              Why This Prediction?
+              Почему получено такое предсказание?
             </Typography>
             <Typography variant="body1" sx={{ lineHeight: 1.8, fontSize: '1.05rem' }}>
               {generateExplanation()}
@@ -451,17 +451,17 @@ const LimeResultsPage: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Box>
                 <Typography variant="h6" fontWeight="bold">
-                  Feature Contributions
+                  Вклады признаков
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  <span style={{ color: '#4caf50', fontWeight: 'bold' }}>Green</span> pushes prediction higher • <span style={{ color: '#f44336', fontWeight: 'bold' }}>Red</span> pushes prediction lower
+                  <span style={{ color: '#4caf50', fontWeight: 'bold' }}>Зеленый</span> повышает предсказание • <span style={{ color: '#f44336', fontWeight: 'bold' }}>Красный</span> понижает предсказание
                 </Typography>
               </Box>
               <Box>
-                <Typography variant="caption" sx={{ mr: 2 }}>Display:</Typography>
-                <Button size="small" onClick={() => setShowTopN(5)} variant={showTopN === 5 ? 'contained' : 'outlined'}>Top 5</Button>
-                <Button size="small" onClick={() => setShowTopN(10)} variant={showTopN === 10 ? 'contained' : 'outlined'} sx={{ mx: 1 }}>Top 10</Button>
-                <Button size="small" onClick={() => setShowTopN(-1)} variant={showTopN === -1 ? 'contained' : 'outlined'}>All</Button>
+                <Typography variant="caption" sx={{ mr: 2 }}>Показать:</Typography>
+                <Button size="small" onClick={() => setShowTopN(5)} variant={showTopN === 5 ? 'contained' : 'outlined'}>5</Button>
+                <Button size="small" onClick={() => setShowTopN(10)} variant={showTopN === 10 ? 'contained' : 'outlined'} sx={{ mx: 1 }}>10</Button>
+                <Button size="small" onClick={() => setShowTopN(-1)} variant={showTopN === -1 ? 'contained' : 'outlined'}>Все</Button>
               </Box>
             </Box>
 
@@ -470,6 +470,15 @@ const LimeResultsPage: React.FC = () => {
                 data={results.visualizations.lime_bar_chart.data}
                 layout={{
                   ...results.visualizations.lime_bar_chart.layout,
+                  title: { text: 'Вклады признаков по LIME' },
+                  xaxis: {
+                    ...results.visualizations.lime_bar_chart.layout?.xaxis,
+                    title: { text: 'Вклад' },
+                  },
+                  yaxis: {
+                    ...results.visualizations.lime_bar_chart.layout?.yaxis,
+                    title: { text: 'Признаки' },
+                  },
                   height: Math.max(400, displayedFeatures.length * 30),
                   shapes: [{
                     type: 'line',
@@ -484,7 +493,7 @@ const LimeResultsPage: React.FC = () => {
                     }
                   }]
                 }}
-                config={{ responsive: true }}
+                config={{ ...russianPlotlyConfig, responsive: true }}
                 style={{ width: '100%' }}
               />
             )}
@@ -495,21 +504,21 @@ const LimeResultsPage: React.FC = () => {
         <Card sx={{ mb: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom fontWeight="bold">
-              Detailed Feature Analysis
+              Подробный анализ признаков
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
-              Complete breakdown of all features and their contributions
+              Полная информация о признаках и их вкладах
             </Typography>
 
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: '#f5f5f5' }}>
-                    <TableCell><strong>Rank</strong></TableCell>
-                    <TableCell><strong>Feature</strong></TableCell>
-                    <TableCell align="right"><strong>Contribution</strong></TableCell>
-                    <TableCell align="right"><strong>% of Total</strong></TableCell>
-                    <TableCell align="center"><strong>Impact</strong></TableCell>
+                    <TableCell><strong>Место</strong></TableCell>
+                    <TableCell><strong>Признак</strong></TableCell>
+                    <TableCell align="right"><strong>Вклад</strong></TableCell>
+                    <TableCell align="right"><strong>% от общего</strong></TableCell>
+                    <TableCell align="center"><strong>Влияние</strong></TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -548,7 +557,7 @@ const LimeResultsPage: React.FC = () => {
                         </TableCell>
                         <TableCell align="center">
                           <Chip
-                            label={isPositive ? 'Positive' : 'Negative'}
+                            label={isPositive ? 'Положительное' : 'Отрицательное'}
                             size="small"
                             color={isPositive ? 'success' : 'error'}
                             icon={isPositive ? <TrendingUpIcon /> : <TrendingDownIcon />}
@@ -567,20 +576,20 @@ const LimeResultsPage: React.FC = () => {
         <Card sx={{ mb: 3, borderTop: '3px solid #ff9800' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom fontWeight="bold">
-              Explanation Reliability Assessment
+              Оценка надежности объяснения
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
-              How much can you trust this explanation?
+              Насколько можно доверять этому объяснению?
             </Typography>
 
             <Grid container spacing={3}>
               <Grid item xs={12} md={3}>
                 <Paper sx={{ p: 3, textAlign: 'center', bgcolor: '#f5f5f5' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Trust Score</Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>Оценка надежности</Typography>
                   <Typography variant="h2" color={trustInfo.color} fontWeight="bold">
                     {trustInfo.score}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">out of 100</Typography>
+                  <Typography variant="caption" color="text.secondary">из 100</Typography>
                   <Box sx={{ mt: 2 }}>
                     <Chip
                       label={trustInfo.level}
@@ -593,36 +602,36 @@ const LimeResultsPage: React.FC = () => {
 
               <Grid item xs={12} md={3}>
                 <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Active Features</Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>Активные признаки</Typography>
                   <Typography variant="h3" color="primary" fontWeight="bold">
                     {trustInfo.activeFeatures}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    of {Object.keys(featureImportance).length} total
+                    из {Object.keys(featureImportance).length}
                   </Typography>
                 </Paper>
               </Grid>
 
               <Grid item xs={12} md={3}>
                 <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Top 3 Concentration</Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>Доля трех лидеров</Typography>
                   <Typography variant="h3" color="primary" fontWeight="bold">
                     {trustInfo.concentration}%
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    of total contribution
+                    от общего вклада
                   </Typography>
                 </Paper>
               </Grid>
 
               <Grid item xs={12} md={3}>
                 <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Dominant Feature</Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>Ведущий признак</Typography>
                   <Typography variant="h3" color="primary" fontWeight="bold">
                     {trustInfo.dominantShare}%
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    single feature share
+                    доля одного признака
                   </Typography>
                 </Paper>
               </Grid>
@@ -640,11 +649,11 @@ const LimeResultsPage: React.FC = () => {
         <Card sx={{ mb: 3, borderTop: '3px solid #9c27b0' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom fontWeight="bold">
-              What-If Analysis
+              Анализ «что, если»
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
-              Adjust the most influential features to see how they affect the model prediction in real time.
-              This helps you understand model sensitivity and decision boundaries.
+              Изменяйте самые влиятельные признаки и наблюдайте, как они воздействуют на предсказание модели.
+              Это помогает оценить чувствительность модели и границы принятия решений.
             </Typography>
 
             <Grid container spacing={3}>
@@ -653,7 +662,7 @@ const LimeResultsPage: React.FC = () => {
                 <Paper sx={{ p: 3, bgcolor: '#fafafa' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Typography variant="subtitle1" fontWeight="bold">
-                      Adjust Top Features
+                      Настройка главных признаков
                     </Typography>
                     <Button
                       size="small"
@@ -666,17 +675,22 @@ const LimeResultsPage: React.FC = () => {
                         setWhatIfValues(resetValues);
                       }}
                     >
-                      Reset All
+                      Сбросить все
                     </Button>
                   </Box>
 
                   {sortedFeatures.slice(0, 5).map(([feature, contribution]) => {
                     const currentValue = whatIfValues[feature] || 50;
                     const isPositive = (contribution as number) > 0;
-                    const sensitivity = Math.abs(contribution as number) > 0.1 ? 'High' :
-                                       Math.abs(contribution as number) > 0.05 ? 'Medium' : 'Low';
-                    const sensitivityColor = sensitivity === 'High' ? 'error' :
-                                            sensitivity === 'Medium' ? 'warning' : 'success';
+                    const sensitivity = Math.abs(contribution as number) > 0.1 ? 'Высокое' :
+                                       Math.abs(contribution as number) > 0.05 ? 'Среднее' : 'Низкое';
+                    const sensitivityColor = sensitivity === 'Высокое' ? 'error' :
+                                            sensitivity === 'Среднее' ? 'warning' : 'success';
+                    const sensitivityDescription = sensitivity === 'Высокое'
+                      ? 'небольшие изменения заметно влияют на предсказание'
+                      : sensitivity === 'Среднее'
+                        ? 'умеренное влияние на предсказание'
+                        : 'слабое влияние на предсказание';
 
                     return (
                       <Box key={feature} sx={{ mb: 4, pb: 3, borderBottom: '1px solid #e0e0e0' }}>
@@ -686,15 +700,15 @@ const LimeResultsPage: React.FC = () => {
                               {formatFeatureName(feature)}
                             </Typography>
                             <Chip
-                              label={isPositive ? 'Positive' : 'Negative'}
+                              label={isPositive ? 'Положительное' : 'Отрицательное'}
                               size="small"
                               color={isPositive ? 'success' : 'error'}
                               sx={{ height: 20 }}
                             />
                           </Box>
-                          <Tooltip title={`${sensitivity} impact feature - ${sensitivity === 'High' ? 'small changes significantly affect prediction' : sensitivity === 'Medium' ? 'moderate impact on prediction' : 'low impact on prediction'}`}>
+                          <Tooltip title={`${sensitivity} влияние: ${sensitivityDescription}`}>
                             <Chip
-                              label={`${sensitivity} Impact`}
+                              label={`${sensitivity} влияние`}
                               size="small"
                               color={sensitivityColor}
                               variant="outlined"
@@ -715,9 +729,9 @@ const LimeResultsPage: React.FC = () => {
                             min={0}
                             max={100}
                             marks={[
-                              { value: 0, label: 'Min' },
-                              { value: 50, label: 'Current' },
-                              { value: 100, label: 'Max' }
+                              { value: 0, label: 'Мин.' },
+                              { value: 50, label: 'Текущее' },
+                              { value: 100, label: 'Макс.' }
                             ]}
                             sx={{
                               flexGrow: 1,
@@ -745,7 +759,7 @@ const LimeResultsPage: React.FC = () => {
                         </Box>
 
                         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                          Original contribution: {isPositive ? '+' : ''}{(contribution as number).toFixed(3)}
+                          Исходный вклад: {isPositive ? '+' : ''}{(contribution as number).toFixed(3)}
                         </Typography>
                       </Box>
                     );
@@ -757,7 +771,7 @@ const LimeResultsPage: React.FC = () => {
               <Grid item xs={12} md={5}>
                 <Paper sx={{ p: 3, bgcolor: '#f3e5f5', position: 'sticky', top: 20 }}>
                   <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                    Live Prediction
+                    Предсказание в реальном времени
                   </Typography>
 
                   {(() => {
@@ -778,19 +792,19 @@ const LimeResultsPage: React.FC = () => {
                       <>
                         <Box sx={{ mb: 3, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" color="text.secondary" gutterBottom>
-                            New Prediction
+                            Новое предсказание
                           </Typography>
                           <Typography variant="h3" color="primary" fontWeight="bold">
                             {(newProbability * 100).toFixed(1)}%
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            Class {newPredictedClass}
+                            Класс {newPredictedClass}
                           </Typography>
                         </Box>
 
                         <Box sx={{ mb: 3, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Change from Original
+                            Изменение относительно исходного
                           </Typography>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             {probabilityChange > 0 ? (
@@ -810,16 +824,16 @@ const LimeResultsPage: React.FC = () => {
 
                         <Box sx={{ mb: 3, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Class Changed?
+                            Класс изменился?
                           </Typography>
                           <Chip
-                            label={classChanged ? 'Yes' : 'No'}
+                            label={classChanged ? 'Да' : 'Нет'}
                             color={classChanged ? 'warning' : 'success'}
                             sx={{ fontWeight: 'bold', fontSize: '1rem' }}
                           />
                           {classChanged && (
                             <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
-                              Prediction switched from Class {predictedClass} to Class {newPredictedClass}
+                              Предсказанный класс изменился с {predictedClass} на {newPredictedClass}
                             </Typography>
                           )}
                         </Box>
@@ -828,10 +842,10 @@ const LimeResultsPage: React.FC = () => {
 
                         <Box sx={{ p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" fontWeight="bold" gutterBottom>
-                            Comparison
+                            Сравнение
                           </Typography>
                           <Box sx={{ mb: 2 }}>
-                            <Typography variant="caption" color="text.secondary">Original</Typography>
+                            <Typography variant="caption" color="text.secondary">Исходное</Typography>
                             <LinearProgress
                               variant="determinate"
                               value={confidence * 100}
@@ -845,7 +859,7 @@ const LimeResultsPage: React.FC = () => {
                             <Typography variant="caption">{(confidence * 100).toFixed(1)}%</Typography>
                           </Box>
                           <Box>
-                            <Typography variant="caption" color="text.secondary">Modified</Typography>
+                            <Typography variant="caption" color="text.secondary">Измененное</Typography>
                             <LinearProgress
                               variant="determinate"
                               value={newProbability * 100}
@@ -864,8 +878,8 @@ const LimeResultsPage: React.FC = () => {
 
                         <Alert severity="info" sx={{ mt: 2 }}>
                           <Typography variant="caption">
-                            This is a simplified simulation. Actual model behavior may differ.
-                            Adjust sliders to explore how features influence the prediction.
+                            Это упрощенная симуляция. Реальное поведение модели может отличаться.
+                            Перемещайте ползунки, чтобы изучить влияние признаков на предсказание.
                           </Typography>
                         </Alert>
                       </>
@@ -882,14 +896,14 @@ const LimeResultsPage: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom fontWeight="bold">
-                Model Performance Metrics
+                Метрики качества модели
               </Typography>
               <Grid container spacing={2}>
                 {Object.entries(results.visualizations.metrics).map(([key, value]) => (
                   <Grid item xs={6} sm={4} md={2.4} key={key}>
                     <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#f5f5f5' }}>
                       <Typography variant="body2" color="text.secondary" gutterBottom>
-                        {key.toUpperCase().replace('_', ' ')}
+                        {formatMetricName(key)}
                       </Typography>
                       <Typography variant="h5" color="primary" fontWeight="bold">
                         {(value as number).toFixed(4)}

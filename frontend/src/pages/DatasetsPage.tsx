@@ -23,7 +23,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadIcon from '@mui/icons-material/Upload';
-import { datasetsAPI } from '../api';
+import api, { datasetsAPI } from '../api';
 
 interface Dataset {
   id: string;
@@ -61,13 +61,12 @@ const DatasetsPage: React.FC = () => {
 
   const handleUpload = async () => {
     if (!uploadFile || !datasetName) {
-      alert('Please provide dataset name and file');
+      alert('Укажите название датасета и выберите файл');
       return;
     }
 
     setLoading(true);
     try {
-      // Get presigned URL
       const urlResponse = await datasetsAPI.getUploadUrl();
       const { upload_url, s3_key } = urlResponse.data;
 
@@ -75,29 +74,32 @@ const DatasetsPage: React.FC = () => {
       const formData = new FormData();
       formData.append('file', uploadFile);
 
-      await axios.post(upload_url, formData);
+      if (upload_url.startsWith('/')) {
+        await api.post(upload_url, formData);
+      } else {
+        await axios.post(upload_url, formData);
+      }
 
-      // Create dataset record
       await datasetsAPI.createDataset({
         name: datasetName,
         description: datasetDescription,
         s3_key: s3_key,
       });
 
-      alert('Dataset uploaded successfully!');
+      alert('Датасет успешно загружен');
       setOpenDialog(false);
       resetForm();
       loadDatasets();
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Failed to upload dataset');
+      alert('Не удалось загрузить датасет');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this dataset?')) {
+    if (!window.confirm('Удалить этот датасет?')) {
       return;
     }
 
@@ -106,7 +108,7 @@ const DatasetsPage: React.FC = () => {
       loadDatasets();
     } catch (error) {
       console.error('Delete failed:', error);
-      alert('Failed to delete dataset');
+      alert('Не удалось удалить датасет');
     }
   };
 
@@ -115,18 +117,12 @@ const DatasetsPage: React.FC = () => {
       const response = await datasetsAPI.downloadDataset(id);
       const { download_url, filename } = response.data;
 
-      // For local storage, download through axios with auth
-      if (download_url.includes('localhost')) {
-        const fileResponse = await axios.get(download_url, {
+      // Local storage is served through the authenticated application API.
+      if (download_url.startsWith('/')) {
+        const fileResponse = await api.get(download_url, {
           responseType: 'blob',
-          headers: {
-            'Authorization': localStorage.getItem('access_token')
-              ? `Bearer ${localStorage.getItem('access_token')}`
-              : ''
-          }
         });
 
-        // Create blob URL and trigger download
         const blob = new Blob([fileResponse.data]);
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -142,7 +138,7 @@ const DatasetsPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Download failed:', error);
-      alert('Failed to download dataset');
+      alert('Не удалось скачать датасет');
     }
   };
 
@@ -156,13 +152,13 @@ const DatasetsPage: React.FC = () => {
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-          <Typography variant="h4">Datasets</Typography>
+          <Typography variant="h4">Датасеты</Typography>
           <Button
             variant="contained"
             startIcon={<UploadIcon />}
             onClick={() => setOpenDialog(true)}
           >
-            Upload Dataset
+            Загрузить датасет
           </Button>
         </Box>
 
@@ -172,29 +168,37 @@ const DatasetsPage: React.FC = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Rows</TableCell>
-                <TableCell>Features</TableCell>
-                <TableCell>Size</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Actions</TableCell>
+                <TableCell>Название</TableCell>
+                <TableCell>Строки</TableCell>
+                <TableCell>Признаки</TableCell>
+                <TableCell>Размер</TableCell>
+                <TableCell>Дата создания</TableCell>
+                <TableCell>Действия</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {datasets.map((dataset) => (
                 <TableRow key={dataset.id}>
                   <TableCell>{dataset.name}</TableCell>
-                  <TableCell>{dataset.num_rows || 'N/A'}</TableCell>
-                  <TableCell>{dataset.num_features || 'N/A'}</TableCell>
+                  <TableCell>{dataset.num_rows || 'Нет данных'}</TableCell>
+                  <TableCell>{dataset.num_features || 'Нет данных'}</TableCell>
                   <TableCell>
-                    {dataset.file_size ? `${(dataset.file_size / 1024 / 1024).toFixed(2)} MB` : 'N/A'}
+                    {dataset.file_size ? `${(dataset.file_size / 1024 / 1024).toFixed(2)} МБ` : 'Нет данных'}
                   </TableCell>
-                  <TableCell>{new Date(dataset.created_at).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(dataset.created_at).toLocaleDateString('ru-RU')}</TableCell>
                   <TableCell>
-                    <IconButton onClick={() => handleDownload(dataset.id)} color="primary">
+                    <IconButton
+                      onClick={() => handleDownload(dataset.id)}
+                      color="primary"
+                      aria-label={`Скачать датасет ${dataset.name}`}
+                    >
                       <DownloadIcon />
                     </IconButton>
-                    <IconButton onClick={() => handleDelete(dataset.id)} color="error">
+                    <IconButton
+                      onClick={() => handleDelete(dataset.id)}
+                      color="error"
+                      aria-label={`Удалить датасет ${dataset.name}`}
+                    >
                       <DeleteIcon />
                     </IconButton>
                   </TableCell>
@@ -205,18 +209,18 @@ const DatasetsPage: React.FC = () => {
         </TableContainer>
 
         <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Upload Dataset</DialogTitle>
+          <DialogTitle>Загрузка датасета</DialogTitle>
           <DialogContent>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
               <TextField
-                label="Dataset Name"
+                label="Название датасета"
                 value={datasetName}
                 onChange={(e) => setDatasetName(e.target.value)}
                 fullWidth
                 required
               />
               <TextField
-                label="Description"
+                label="Описание"
                 value={datasetDescription}
                 onChange={(e) => setDatasetDescription(e.target.value)}
                 fullWidth
@@ -224,7 +228,7 @@ const DatasetsPage: React.FC = () => {
                 rows={3}
               />
               <Button variant="outlined" component="label">
-                Choose CSV File
+                Выбрать CSV-файл
                 <input
                   type="file"
                   accept=".csv"
@@ -236,9 +240,9 @@ const DatasetsPage: React.FC = () => {
             </Box>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+            <Button onClick={() => setOpenDialog(false)}>Отмена</Button>
             <Button onClick={handleUpload} variant="contained" disabled={loading}>
-              Upload
+              Загрузить
             </Button>
           </DialogActions>
         </Dialog>

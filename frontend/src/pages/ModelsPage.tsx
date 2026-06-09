@@ -27,7 +27,8 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadIcon from '@mui/icons-material/Upload';
-import { modelsAPI } from '../api';
+import api, { modelsAPI } from '../api';
+import { formatStatus } from '../utils/localization';
 
 interface Model {
   id: string;
@@ -66,13 +67,12 @@ const ModelsPage: React.FC = () => {
 
   const handleUpload = async () => {
     if (!uploadFile || !modelName) {
-      alert('Please provide model name and file');
+      alert('Укажите название модели и выберите файл');
       return;
     }
 
     setLoading(true);
     try {
-      // Get presigned URL
       const urlResponse = await modelsAPI.getUploadUrl(modelType);
       const { upload_url, s3_key } = urlResponse.data;
 
@@ -80,9 +80,12 @@ const ModelsPage: React.FC = () => {
       const formData = new FormData();
       formData.append('file', uploadFile);
 
-      await axios.post(upload_url, formData);
+      if (upload_url.startsWith('/')) {
+        await api.post(upload_url, formData);
+      } else {
+        await axios.post(upload_url, formData);
+      }
 
-      // Create model record
       await modelsAPI.createModel({
         name: modelName,
         description: modelDescription,
@@ -90,20 +93,20 @@ const ModelsPage: React.FC = () => {
         s3_key: s3_key,
       });
 
-      alert('Model uploaded successfully!');
+      alert('Модель успешно загружена');
       setOpenDialog(false);
       resetForm();
       loadModels();
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Failed to upload model');
+      alert('Не удалось загрузить модель');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this model?')) {
+    if (!window.confirm('Удалить эту модель?')) {
       return;
     }
 
@@ -112,7 +115,7 @@ const ModelsPage: React.FC = () => {
       loadModels();
     } catch (error) {
       console.error('Delete failed:', error);
-      alert('Failed to delete model');
+      alert('Не удалось удалить модель');
     }
   };
 
@@ -121,18 +124,12 @@ const ModelsPage: React.FC = () => {
       const response = await modelsAPI.downloadModel(id);
       const { download_url, filename } = response.data;
 
-      // For local storage, download through axios with auth
-      if (download_url.includes('localhost')) {
-        const fileResponse = await axios.get(download_url, {
+      // Local storage is served through the authenticated application API.
+      if (download_url.startsWith('/')) {
+        const fileResponse = await api.get(download_url, {
           responseType: 'blob',
-          headers: {
-            'Authorization': localStorage.getItem('access_token')
-              ? `Bearer ${localStorage.getItem('access_token')}`
-              : ''
-          }
         });
 
-        // Create blob URL and trigger download
         const blob = new Blob([fileResponse.data]);
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -148,7 +145,7 @@ const ModelsPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Download failed:', error);
-      alert('Failed to download model');
+      alert('Не удалось скачать модель');
     }
   };
 
@@ -163,13 +160,13 @@ const ModelsPage: React.FC = () => {
     <Container maxWidth="lg">
       <Box sx={{ my: 4 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-          <Typography variant="h4">Models</Typography>
+          <Typography variant="h4">Модели</Typography>
           <Button
             variant="contained"
             startIcon={<UploadIcon />}
             onClick={() => setOpenDialog(true)}
           >
-            Upload Model
+            Загрузить модель
           </Button>
         </Box>
 
@@ -179,12 +176,12 @@ const ModelsPage: React.FC = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Size</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Actions</TableCell>
+                <TableCell>Название</TableCell>
+                <TableCell>Тип</TableCell>
+                <TableCell>Статус</TableCell>
+                <TableCell>Размер</TableCell>
+                <TableCell>Дата создания</TableCell>
+                <TableCell>Действия</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -192,16 +189,24 @@ const ModelsPage: React.FC = () => {
                 <TableRow key={model.id}>
                   <TableCell>{model.name}</TableCell>
                   <TableCell>{model.model_type}</TableCell>
-                  <TableCell>{model.status}</TableCell>
+                  <TableCell>{formatStatus(model.status)}</TableCell>
                   <TableCell>
-                    {model.file_size ? `${(model.file_size / 1024 / 1024).toFixed(2)} MB` : 'N/A'}
+                    {model.file_size ? `${(model.file_size / 1024 / 1024).toFixed(2)} МБ` : 'Нет данных'}
                   </TableCell>
-                  <TableCell>{new Date(model.created_at).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(model.created_at).toLocaleDateString('ru-RU')}</TableCell>
                   <TableCell>
-                    <IconButton onClick={() => handleDownload(model.id)} color="primary">
+                    <IconButton
+                      onClick={() => handleDownload(model.id)}
+                      color="primary"
+                      aria-label={`Скачать модель ${model.name}`}
+                    >
                       <DownloadIcon />
                     </IconButton>
-                    <IconButton onClick={() => handleDelete(model.id)} color="error">
+                    <IconButton
+                      onClick={() => handleDelete(model.id)}
+                      color="error"
+                      aria-label={`Удалить модель ${model.name}`}
+                    >
                       <DeleteIcon />
                     </IconButton>
                   </TableCell>
@@ -212,18 +217,18 @@ const ModelsPage: React.FC = () => {
         </TableContainer>
 
         <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Upload Model</DialogTitle>
+          <DialogTitle>Загрузка модели</DialogTitle>
           <DialogContent>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
               <TextField
-                label="Model Name"
+                label="Название модели"
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
                 fullWidth
                 required
               />
               <TextField
-                label="Description"
+                label="Описание"
                 value={modelDescription}
                 onChange={(e) => setModelDescription(e.target.value)}
                 fullWidth
@@ -231,8 +236,12 @@ const ModelsPage: React.FC = () => {
                 rows={3}
               />
               <FormControl fullWidth>
-                <InputLabel>Model Type</InputLabel>
-                <Select value={modelType} onChange={(e) => setModelType(e.target.value)}>
+                <InputLabel>Тип модели</InputLabel>
+                <Select
+                  value={modelType}
+                  label="Тип модели"
+                  onChange={(e) => setModelType(e.target.value)}
+                >
                   <MenuItem value="sklearn">Scikit-learn</MenuItem>
                   <MenuItem value="xgboost">XGBoost</MenuItem>
                   <MenuItem value="lightgbm">LightGBM</MenuItem>
@@ -243,7 +252,7 @@ const ModelsPage: React.FC = () => {
                 </Select>
               </FormControl>
               <Button variant="outlined" component="label">
-                Choose File
+                Выбрать файл
                 <input
                   type="file"
                   hidden
@@ -254,9 +263,9 @@ const ModelsPage: React.FC = () => {
             </Box>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+            <Button onClick={() => setOpenDialog(false)}>Отмена</Button>
             <Button onClick={handleUpload} variant="contained" disabled={loading}>
-              Upload
+              Загрузить
             </Button>
           </DialogActions>
         </Dialog>

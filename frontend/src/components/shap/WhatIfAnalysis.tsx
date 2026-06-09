@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from "react";
 import {
   Box,
   Paper,
@@ -15,7 +15,9 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import Plot from 'react-plotly.js';
+import type { Data, Layout } from 'plotly.js';
 import { whatIfAPI } from '../../api';
+import { russianPlotlyConfig } from '../../utils/plotlyConfig';
 
 interface FeatureChange {
   feature: string;
@@ -51,6 +53,10 @@ interface Props {
   baseValue: number;
 }
 
+type BarTraceWithBase = Data & {
+  base: number[];
+};
+
 const WhatIfAnalysis: React.FC<Props> = ({
   analysisId,
   sampleId,
@@ -63,14 +69,12 @@ const WhatIfAnalysis: React.FC<Props> = ({
   const [result, setResult] = useState<WhatIfResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Get feature ranges for sliders
   const getFeatureRange = (featureName: string): [number, number] => {
     const value = originalFeatures[featureName].value;
     const range = Math.abs(value) * 2 || 10;
     return [value - range, value + range];
   };
 
-  // Get top features by absolute SHAP value
   const topFeatures = Object.entries(originalFeatures)
     .sort((a, b) => Math.abs(b[1].shap_value) - Math.abs(a[1].shap_value))
     .slice(0, 10)
@@ -85,7 +89,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
 
   const handleAnalyze = async () => {
     if (Object.keys(modifiedFeatures).length === 0) {
-      setError('Please modify at least one feature');
+      setError('Измените хотя бы один признак');
       return;
     }
 
@@ -97,7 +101,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
       setResult(response.data);
     } catch (err: any) {
       console.error('What-If analysis failed:', err);
-      setError(err.response?.data?.detail || 'Analysis failed');
+      setError('Не удалось выполнить анализ');
     } finally {
       setLoading(false);
     }
@@ -128,7 +132,6 @@ const WhatIfAnalysis: React.FC<Props> = ({
       .sort((a, b) => Math.abs(b.shap_value) - Math.abs(a.shap_value))
       .slice(0, 10);
 
-    // Build waterfall data
     let cumulative = baseValue;
     const waterfallData = sortedFeatures.map(f => {
       const start = cumulative;
@@ -148,6 +151,34 @@ const WhatIfAnalysis: React.FC<Props> = ({
     const colors = waterfallData.map(d =>
       d.shap_value > 0 ? 'rgba(244, 67, 54, 0.7)' : 'rgba(33, 150, 243, 0.7)'
     );
+    const trace: BarTraceWithBase = {
+      type: 'bar',
+      orientation: 'h',
+      x: x,
+      y: y,
+      base: base,
+      marker: { color: colors },
+      hovertemplate:
+        '<b>%{y}</b><br>' +
+        'Значение SHAP: %{x:.4f}<br>' +
+        '<extra></extra>',
+      showlegend: false
+    };
+    const layout: Partial<Layout> = {
+      height: 400,
+      margin: { l: 150, r: 20, t: 20, b: 40 },
+      xaxis: {
+        title: { text: 'Значение SHAP' },
+        zeroline: true,
+        zerolinecolor: 'rgba(0,0,0,0.3)',
+        zerolinewidth: 2
+      },
+      yaxis: {
+        automargin: true
+      },
+      plot_bgcolor: 'rgba(250,250,250,0.5)',
+      paper_bgcolor: 'white'
+    };
 
     return (
       <Box>
@@ -155,40 +186,13 @@ const WhatIfAnalysis: React.FC<Props> = ({
           {title}
         </Typography>
         <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-          Base: {baseValue.toFixed(4)} → Prediction: {prediction.toFixed(4)}
+          Базовое значение: {baseValue.toFixed(4)} → Предсказание: {prediction.toFixed(4)}
         </Typography>
         <Plot
-          data={[
-            {
-              type: 'bar',
-              orientation: 'h',
-              x: x,
-              y: y,
-              base: base,
-              marker: { color: colors },
-              hovertemplate:
-                '<b>%{y}</b><br>' +
-                'SHAP: %{x:.4f}<br>' +
-                '<extra></extra>',
-              showlegend: false
-            }
-          ] as any}
-          layout={{
-            height: 400,
-            margin: { l: 150, r: 20, t: 20, b: 40 },
-            xaxis: {
-              title: 'SHAP value',
-              zeroline: true,
-              zerolinecolor: 'rgba(0,0,0,0.3)',
-              zerolinewidth: 2
-            },
-            yaxis: {
-              automargin: true
-            },
-            plot_bgcolor: 'rgba(250,250,250,0.5)',
-            paper_bgcolor: 'white'
-          } as any}
+          data={[trace]}
+          layout={layout}
           config={{
+            ...russianPlotlyConfig,
             responsive: true,
             displayModeBar: false
           }}
@@ -202,7 +206,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">
-          What-If Analysis
+          Анализ «что, если»
         </Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
@@ -212,7 +216,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
             disabled={Object.keys(modifiedFeatures).length === 0}
             size="small"
           >
-            Reset
+            Сбросить
           </Button>
           <Button
             variant="contained"
@@ -220,13 +224,13 @@ const WhatIfAnalysis: React.FC<Props> = ({
             disabled={loading || Object.keys(modifiedFeatures).length === 0}
             size="small"
           >
-            {loading ? <CircularProgress size={20} /> : 'Analyze'}
+            {loading ? <CircularProgress size={20} /> : 'Анализировать'}
           </Button>
         </Box>
       </Box>
 
       <Typography variant="caption" color="text.secondary" paragraph>
-        Modify feature values below to see how predictions change
+        Изменяйте значения признаков, чтобы увидеть, как меняется предсказание
       </Typography>
 
       {error && (
@@ -241,7 +245,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={4}>
               <Typography variant="caption" color="text.secondary">
-                Original Prediction
+                Исходное предсказание
               </Typography>
               <Typography variant="h6">
                 {originalPrediction.toFixed(4)}
@@ -249,7 +253,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
             </Grid>
             <Grid item xs={12} sm={4}>
               <Typography variant="caption" color="text.secondary">
-                New Prediction
+                Новое предсказание
               </Typography>
               <Typography variant="h6" color="secondary">
                 {result.new_prediction.toFixed(4)}
@@ -257,7 +261,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
             </Grid>
             <Grid item xs={12} sm={4}>
               <Typography variant="caption" color="text.secondary">
-                Change
+                Изменение
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Typography
@@ -282,7 +286,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
 
       {/* Feature Sliders */}
       <Typography variant="subtitle2" gutterBottom>
-        Top {topFeatures.length} Features (by importance)
+        Самые важные признаки: {topFeatures.length}
       </Typography>
 
       <Grid container spacing={3}>
@@ -309,7 +313,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
                   </Typography>
                   {modified && (
                     <Chip
-                      label="Modified"
+                      label="Изменен"
                       size="small"
                       color="secondary"
                       sx={{ height: 20 }}
@@ -327,7 +331,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
                     valueLabelDisplay="auto"
                     valueLabelFormat={(v) => v.toFixed(3)}
                     marks={[
-                      { value: originalValue, label: 'Original' }
+                      { value: originalValue, label: 'Исходное' }
                     ]}
                     sx={{
                       '& .MuiSlider-markLabel': {
@@ -339,10 +343,10 @@ const WhatIfAnalysis: React.FC<Props> = ({
 
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
                   <Typography variant="caption" color="text.secondary">
-                    Original: {originalValue.toFixed(3)}
+                    Исходное: {originalValue.toFixed(3)}
                   </Typography>
                   <Typography variant="caption" color={modified ? 'secondary' : 'text.secondary'} fontWeight={modified ? 600 : 400}>
-                    Current: {currentValue.toFixed(3)}
+                    Текущее: {currentValue.toFixed(3)}
                   </Typography>
                 </Box>
 
@@ -350,7 +354,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
                 {result && result.all_features[featureName] && (
                   <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                     <Typography variant="caption" color="text.secondary">
-                      SHAP Impact Change:
+                      Изменение влияния SHAP:
                     </Typography>
                     <Typography
                       variant="caption"
@@ -374,15 +378,15 @@ const WhatIfAnalysis: React.FC<Props> = ({
         <Box sx={{ mt: 3 }}>
           <Divider sx={{ mb: 2 }} />
           <Typography variant="subtitle2" gutterBottom>
-            💡 Impact Summary
+            Сводка влияния
           </Typography>
           <Typography variant="body2" color="text.secondary" paragraph>
-            Modified {result.feature_changes.length} feature{result.feature_changes.length > 1 ? 's' : ''}.
-            The biggest impact came from{' '}
+            Изменено признаков: {result.feature_changes.length}.
+            Наибольшее влияние оказал признак{' '}
             <strong>
               {result.feature_changes.sort((a, b) => Math.abs(b.shap_delta) - Math.abs(a.shap_delta))[0].feature}
             </strong>
-            {' '}with a SHAP change of{' '}
+            {' '}; изменение SHAP составило{' '}
             <strong>
               {result.feature_changes.sort((a, b) => Math.abs(b.shap_delta) - Math.abs(a.shap_delta))[0].shap_delta.toFixed(4)}
             </strong>.
@@ -395,10 +399,10 @@ const WhatIfAnalysis: React.FC<Props> = ({
         <Box sx={{ mt: 3 }}>
           <Divider sx={{ mb: 3 }} />
           <Typography variant="h6" gutterBottom>
-            SHAP Waterfall Comparison
+            Сравнение каскадных графиков SHAP
           </Typography>
           <Typography variant="caption" color="text.secondary" paragraph>
-            Side-by-side comparison of feature contributions before and after modifications
+            Сравнение вкладов признаков до и после изменений
           </Typography>
 
           <Grid container spacing={3}>
@@ -406,7 +410,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
             <Grid item xs={12} md={6}>
               <Paper variant="outlined" sx={{ p: 2 }}>
                 {renderWaterfallPlot(
-                  'Original Prediction',
+                  'Исходное предсказание',
                   Object.entries(originalFeatures).map(([feature, data]) => ({
                     feature,
                     shap_value: data.shap_value
@@ -429,7 +433,7 @@ const WhatIfAnalysis: React.FC<Props> = ({
                 }}
               >
                 {renderWaterfallPlot(
-                  'Modified Prediction',
+                  'Измененное предсказание',
                   Object.entries(result.all_features).map(([feature, data]) => ({
                     feature,
                     shap_value: data.new_shap

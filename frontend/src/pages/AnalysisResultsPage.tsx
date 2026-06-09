@@ -74,7 +74,6 @@ const AnalysisResultsPage: React.FC = () => {
     setError(null);
 
     try {
-      // Get analysis info
       const analysisResponse = await analysesAPI.getAnalysis(analysisId);
       const method = analysisResponse.data.method;
 
@@ -84,14 +83,13 @@ const AnalysisResultsPage: React.FC = () => {
         return;
       }
 
-      // Load interactive SHAP data
       if (method === 'shap') {
         const shapResponse = await shapInteractiveAPI.getInteractiveData(analysisId);
         setShapData(shapResponse.data);
       }
     } catch (err: any) {
       console.error('Failed to load analysis:', err);
-      setError(err.response?.data?.detail || 'Failed to load analysis');
+      setError('Не удалось загрузить результаты анализа');
     } finally {
       setLoading(false);
     }
@@ -149,7 +147,6 @@ const AnalysisResultsPage: React.FC = () => {
 
     setLoading(true);
     try {
-      // Build query params
       const params = new URLSearchParams();
 
       // Check if filters are actually different from defaults
@@ -210,7 +207,6 @@ const AnalysisResultsPage: React.FC = () => {
   // Use filtered data if available, otherwise use original
   const displayData = filteredData || shapData;
 
-  // Render loading
   if (loading) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
@@ -221,13 +217,12 @@ const AnalysisResultsPage: React.FC = () => {
     );
   }
 
-  // Render error
   if (error) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
         <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
         <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/analysis')}>
-          Back to Analysis
+          Вернуться к анализу
         </Button>
       </Container>
     );
@@ -239,11 +234,11 @@ const AnalysisResultsPage: React.FC = () => {
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           <Typography variant="h4" gutterBottom>
-            Interactive Analysis Results
+            Интерактивные результаты анализа
           </Typography>
           {shapData && (
             <Typography variant="body2" color="text.secondary">
-              {shapData.n_samples} samples • {shapData.n_features} features • Method: SHAP
+              Объектов: {shapData.n_samples} • Признаков: {shapData.n_features} • Метод: SHAP
             </Typography>
           )}
         </Box>
@@ -255,13 +250,13 @@ const AnalysisResultsPage: React.FC = () => {
             onClick={() => setFilterOpen(!filterOpen)}
             color={activeFiltersCount > 0 ? 'primary' : 'inherit'}
           >
-            Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
+            Фильтры {activeFiltersCount > 0 && `(${activeFiltersCount})`}
           </Button>
           <Button
             startIcon={<ArrowBackIcon />}
             onClick={() => navigate('/analysis')}
           >
-            Back
+            Назад
           </Button>
         </Box>
       </Box>
@@ -280,7 +275,7 @@ const AnalysisResultsPage: React.FC = () => {
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'rgba(76, 175, 80, 0.08)' }}>
-              <Typography variant="body2" color="text.secondary">Base Value</Typography>
+              <Typography variant="body2" color="text.secondary">Базовое значение</Typography>
               <Typography variant="h6" color="success.main">
                 {displayData.base_value.toFixed(4)}
               </Typography>
@@ -288,7 +283,7 @@ const AnalysisResultsPage: React.FC = () => {
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">Mean Prediction</Typography>
+              <Typography variant="body2" color="text.secondary">Среднее предсказание</Typography>
               <Typography variant="h6">
                 {displayData.summary_stats.prediction_mean.toFixed(4)}
               </Typography>
@@ -296,7 +291,7 @@ const AnalysisResultsPage: React.FC = () => {
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">Prediction Range</Typography>
+              <Typography variant="body2" color="text.secondary">Диапазон предсказаний</Typography>
               <Typography variant="h6">
                 {displayData.summary_stats.prediction_min.toFixed(2)} - {displayData.summary_stats.prediction_max.toFixed(2)}
               </Typography>
@@ -305,7 +300,7 @@ const AnalysisResultsPage: React.FC = () => {
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: 'center', bgcolor: activeFiltersCount > 0 ? 'rgba(25, 118, 210, 0.08)' : 'white' }}>
               <Typography variant="body2" color="text.secondary">
-                {activeFiltersCount > 0 ? 'Filtered Samples' : 'Total Samples'}
+                {activeFiltersCount > 0 ? 'Объектов после фильтрации' : 'Всего объектов'}
               </Typography>
               <Typography variant="h6" color={activeFiltersCount > 0 ? 'primary.main' : 'inherit'}>
                 {displayData.n_samples} {shapData && activeFiltersCount > 0 && `/ ${shapData.n_samples}`}
@@ -321,10 +316,10 @@ const AnalysisResultsPage: React.FC = () => {
         <Grid item xs={12} lg={8}>
           <Paper sx={{ p: 3, height: '750px', overflow: 'hidden' }}>
             <Typography variant="h6" gutterBottom>
-              Interactive SHAP Summary Plot
+              Интерактивный сводный график SHAP
             </Typography>
             <Typography variant="caption" color="text.secondary" paragraph>
-              Click any point to see detailed explanation • Shift+Click to compare samples
+              Нажмите на точку для подробного объяснения • Shift+щелчок добавляет объект к сравнению
             </Typography>
             <Box sx={{ height: 'calc(100% - 80px)', width: '100%' }}>
               <InteractiveSummaryPlot
@@ -344,10 +339,10 @@ const AnalysisResultsPage: React.FC = () => {
         <Grid item xs={12} lg={4}>
           <Paper sx={{ p: 3, height: '750px', overflow: 'auto' }}>
             <Typography variant="h6" gutterBottom>
-              Feature Importance
+              Важность признаков
             </Typography>
             <Typography variant="caption" color="text.secondary" paragraph>
-              Ranked by mean absolute SHAP value
+              Ранжирование по среднему абсолютному значению SHAP
             </Typography>
 
             {displayData && Object.entries(displayData.feature_importance)
@@ -379,11 +374,11 @@ const AnalysisResultsPage: React.FC = () => {
                       {idx + 1}. {feature}
                     </Typography>
                     {idx < 3 && (
-                      <Chip label="Top" size="small" color="primary" sx={{ height: 20 }} />
+                      <Chip label="Лидер" size="small" color="primary" sx={{ height: 20 }} />
                     )}
                   </Box>
                   <Typography variant="caption" color="text.secondary">
-                    Mean |SHAP|: {importance.mean_abs_shap.toFixed(4)}
+                    Среднее |SHAP|: {importance.mean_abs_shap.toFixed(4)}
                   </Typography>
                   <Box sx={{ mt: 0.5, height: 4, bgcolor: 'rgba(0,0,0,0.1)', borderRadius: 1 }}>
                     <Box
@@ -435,13 +430,13 @@ const AnalysisResultsPage: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box>
                 <Typography variant="subtitle1" fontWeight={600}>
-                  Comparing {comparisonSamples.length} sample{comparisonSamples.length > 1 ? 's' : ''}
+                  Выбрано объектов для сравнения: {comparisonSamples.length}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
                   {comparisonSamples.map(id => (
                     <Chip
                       key={id}
-                      label={`Sample ${id}`}
+                      label={`Объект ${id}`}
                       onDelete={() => handleAddToComparison(id)}
                       sx={{ bgcolor: 'white', color: 'primary.main' }}
                     />
@@ -453,7 +448,7 @@ const AnalysisResultsPage: React.FC = () => {
                 color="inherit"
                 onClick={() => setComparisonSamples([])}
               >
-                Clear All
+                Очистить
               </Button>
             </Box>
           </Container>

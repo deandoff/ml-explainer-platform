@@ -29,28 +29,28 @@ const Navbar: React.FC = () => {
       <Toolbar>
         <ScienceIcon sx={{ mr: 2 }} />
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          ML Explainer Platform
+          Платформа объяснения ML-моделей
         </Typography>
 
         {isAuthenticated ? (
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Button color="inherit" component={RouterLink} to="/">
-              Home
+              Главная
             </Button>
             <Button color="inherit" component={RouterLink} to="/models">
-              Models
+              Модели
             </Button>
             <Button color="inherit" component={RouterLink} to="/datasets">
-              Datasets
+              Датасеты
             </Button>
             <Button color="inherit" component={RouterLink} to="/analysis">
-              Analysis
+              Анализ
             </Button>
 
             <Box sx={{ ml: 2 }}>
               <IconButton
                 size="large"
-                aria-label="account of current user"
+                aria-label="Учетная запись текущего пользователя"
                 aria-controls="menu-appbar"
                 aria-haspopup="true"
                 onClick={handleMenu}
@@ -78,17 +78,17 @@ const Navbar: React.FC = () => {
                     {user?.email}
                   </Typography>
                 </MenuItem>
-                <MenuItem onClick={handleLogout}>Logout</MenuItem>
+                <MenuItem onClick={handleLogout}>Выйти</MenuItem>
               </Menu>
             </Box>
           </Box>
         ) : (
           <Box>
             <Button color="inherit" component={RouterLink} to="/login">
-              Login
+              Войти
             </Button>
             <Button color="inherit" component={RouterLink} to="/register">
-              Sign Up
+              Регистрация
             </Button>
           </Box>
         )}

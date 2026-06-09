@@ -1,8 +1,8 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box } from '@mui/material';
+import { ruRU } from '@mui/material/locale';
 import { AuthProvider } from './contexts/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Navbar from './components/Navbar';
@@ -15,17 +15,20 @@ import AnalysisPage from './pages/AnalysisPage';
 import AnalysisResultsPage from './pages/AnalysisResultsPage';
 import LimeResultsPage from './pages/LimeResultsPage';
 
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
+const theme = createTheme(
+  {
+    palette: {
+      mode: 'light',
+      primary: {
+        main: '#1976d2',
+      },
+      secondary: {
+        main: '#dc004e',
+      },
     },
   },
-});
+  ruRU
+);
 
 function App() {
   return (
