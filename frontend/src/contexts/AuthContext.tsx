@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from 'react';
 import api from '../api';
 
 interface AuthContextType {
@@ -36,28 +43,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
+  const logout = useCallback(() => {
+    localStorage.removeItem('access_token');
+    setToken(null);
+    setUser(null);
+    delete api.defaults.headers.common['Authorization'];
+  }, []);
+
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const response = await api.get('/api/auth/me');
+      setUser(response.data);
+    } catch (error) {
+      console.error('Failed to fetch current user:', error);
+      logout();
+    } finally {
+      setLoading(false);
+    }
+  }, [logout]);
+
   useEffect(() => {
     if (token) {
+      setLoading(true);
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       fetchCurrentUser();
     } else {
       delete api.defaults.headers.common['Authorization'];
       setLoading(false);
     }
-  }, [token]);
-
-  const fetchCurrentUser = async () => {
-    try {
-      const response = await api.get('/api/auth/me');
-      setUser(response.data);
-    } catch (error) {
-      console.error('Failed to fetch current user:', error);
-      // Token might be invalid, clear it
-      logout();
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [fetchCurrentUser, token]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -92,13 +106,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       throw new Error('Не удалось зарегистрироваться. Попробуйте еще раз.');
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    setToken(null);
-    setUser(null);
-    delete api.defaults.headers.common['Authorization'];
   };
 
   const value: AuthContextType = {

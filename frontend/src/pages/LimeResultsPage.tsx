@@ -62,6 +62,7 @@ const LimeResultsPage: React.FC = () => {
         });
         setWhatIfValues(initialValues);
       }
+    };
 
       setLoading(false);
     } catch (error) {

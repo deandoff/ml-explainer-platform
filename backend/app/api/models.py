@@ -8,6 +8,7 @@ from app.models.models import Model as ModelDB, ModelStatus
 from app.schemas.schemas import ModelCreate, ModelResponse, PresignedUrlResponse
 from app.services.storage import storage_service
 from app.core.config import settings
+from starlette.concurrency import run_in_threadpool
 import os
 
 router = APIRouter()
@@ -17,36 +18,55 @@ router = APIRouter()
 async def get_upload_url(
     model_type: str,
     current_user_id: UUID = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
 ):
     """Generate presigned URL for model upload"""
     try:
+        content_type = "application/octet-stream"
         # Include user_id in storage path for isolation
         upload_url, s3_key = storage_service.generate_presigned_upload_url(
-            file_type="application/octet-stream",
+            file_type=content_type,
             prefix=f"artifacts/models/{current_user_id}"
         )
 
         # For local storage, return API endpoint instead of file path
         if settings.STORAGE_MODE == "local":
-            upload_url = f"http://localhost:8000/api/models/upload/{s3_key}"
+            upload_url = f"/api/models/upload/{s3_key}"
 
         return PresignedUrlResponse(
             upload_url=upload_url,
             s3_key=s3_key,
-            expires_in=3600
+            expires_in=3600,
+            upload_method="POST" if settings.STORAGE_MODE == "local" else "PUT",
+            content_type=content_type,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
 
 
 @router.post("/upload/{s3_key:path}")
-async def upload_file_direct(s3_key: str, file: UploadFile = File(...)):
+async def upload_file_direct(
+    s3_key: str,
+    file: UploadFile = File(...),
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     """Direct file upload endpoint for local storage"""
+    if settings.STORAGE_MODE != "local":
+        raise HTTPException(status_code=404, detail="Local uploads are disabled")
+
+    expected_prefix = f"artifacts/models/{current_user_id}/"
+    if not s3_key.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="Invalid storage key")
+
     try:
-        content = await file.read()
-        storage_service.save_uploaded_file(s3_key, content)
+        await run_in_threadpool(
+            storage_service.save_uploaded_file,
+            s3_key,
+            file.file,
+            settings.MAX_UPLOAD_SIZE_BYTES,
+        )
         return {"status": "success"}
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
@@ -59,8 +79,14 @@ async def create_model(
 ):
     """Create model record after successful upload"""
     s3_key = model.s3_key
+    expected_prefix = f"artifacts/models/{current_user_id}/"
+    if not s3_key.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="Invalid storage key")
+
     try:
         file_size = storage_service.get_file_size(s3_key)
+        if file_size is None:
+            raise HTTPException(status_code=400, detail="Uploaded model file not found")
 
         db_model = ModelDB(
             user_id=current_user_id,
@@ -77,6 +103,8 @@ async def create_model(
         db.refresh(db_model)
 
         return db_model
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create model: {str(e)}")
@@ -169,7 +197,7 @@ async def download_model(
 
         # For local storage, return API endpoint instead of file path
         if settings.STORAGE_MODE == "local":
-            download_url = f"http://localhost:8000/api/models/download-file/{model.s3_key}"
+            download_url = f"/api/models/download-file/{model.s3_key}"
 
         return {
             "download_url": download_url,

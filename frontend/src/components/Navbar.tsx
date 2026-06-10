@@ -29,7 +29,7 @@ const Navbar: React.FC = () => {
       <Toolbar>
         <ScienceIcon sx={{ mr: 2 }} />
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          Платформа объяснения ML-моделей
+          ML-explainer
         </Typography>
 
         {isAuthenticated ? (

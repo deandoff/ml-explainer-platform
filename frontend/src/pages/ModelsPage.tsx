@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import {
   Container,
   Typography,
@@ -27,7 +26,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadIcon from '@mui/icons-material/Upload';
-import api, { modelsAPI } from '../api';
+import { downloadPrivateFile, modelsAPI, uploadFile as uploadToTarget } from '../api';
 import { formatStatus } from '../utils/localization';
 
 interface Model {
@@ -74,17 +73,8 @@ const ModelsPage: React.FC = () => {
     setLoading(true);
     try {
       const urlResponse = await modelsAPI.getUploadUrl(modelType);
-      const { upload_url, s3_key } = urlResponse.data;
-
-      // Upload file using axios with FormData
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-
-      if (upload_url.startsWith('/')) {
-        await api.post(upload_url, formData);
-      } else {
-        await axios.post(upload_url, formData);
-      }
+      const { s3_key } = urlResponse.data;
+      await uploadToTarget(urlResponse.data, uploadFile);
 
       await modelsAPI.createModel({
         name: modelName,
@@ -124,11 +114,8 @@ const ModelsPage: React.FC = () => {
       const response = await modelsAPI.downloadModel(id);
       const { download_url, filename } = response.data;
 
-      // Local storage is served through the authenticated application API.
       if (download_url.startsWith('/')) {
-        const fileResponse = await api.get(download_url, {
-          responseType: 'blob',
-        });
+        const fileResponse = await downloadPrivateFile(download_url);
 
         const blob = new Blob([fileResponse.data]);
         const url = window.URL.createObjectURL(blob);

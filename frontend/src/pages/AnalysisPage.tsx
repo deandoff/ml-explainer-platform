@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -68,41 +68,25 @@ const AnalysisPage: React.FC = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(20);
 
-  useEffect(() => {
-    loadModels();
-    loadDatasets();
-    loadAnalyses();
-  }, []);
-
-  useEffect(() => {
-    if (analysisId && analysisStatus === 'running') {
-      const interval = setInterval(() => {
-        checkAnalysisStatus();
-      }, 3000);
-
-      return () => clearInterval(interval);
-    }
-  }, [analysisId, analysisStatus]);
-
-  const loadModels = async () => {
+  const loadModels = useCallback(async () => {
     try {
       const response = await modelsAPI.listModels();
       setModels(response.data);
     } catch (error) {
       console.error('Failed to load models:', error);
     }
-  };
+  }, []);
 
-  const loadDatasets = async () => {
+  const loadDatasets = useCallback(async () => {
     try {
       const response = await datasetsAPI.listDatasets();
       setDatasets(response.data);
     } catch (error) {
       console.error('Failed to load datasets:', error);
     }
-  };
+  }, []);
 
-  const loadAnalyses = async () => {
+  const loadAnalyses = useCallback(async () => {
     try {
       const response = await analysesAPI.listAnalyses();
       // Sort by created_at descending (newest first)
@@ -113,7 +97,52 @@ const AnalysisPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to load analyses:', error);
     }
-  };
+  }, []);
+
+  const loadResults = useCallback(async () => {
+    if (!analysisId) return;
+
+    try {
+      await analysesAPI.getAnalysisResults(analysisId);
+      navigate(`/analysis/${analysisId}/results`);
+      loadAnalyses();
+    } catch (error) {
+      console.error('Failed to load results:', error);
+      setLoading(false);
+    }
+  }, [analysisId, loadAnalyses, navigate]);
+
+  const checkAnalysisStatus = useCallback(async () => {
+    if (!analysisId) return;
+
+    try {
+      const response = await analysesAPI.getAnalysisStatus(analysisId);
+      const status = response.data.status;
+      setAnalysisStatus(status);
+
+      if (status === 'completed') {
+        loadResults();
+      } else if (status === 'failed') {
+        alert('Не удалось выполнить анализ');
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Failed to check status:', error);
+    }
+  }, [analysisId, loadResults]);
+
+  useEffect(() => {
+    loadModels();
+    loadDatasets();
+    loadAnalyses();
+  }, [loadAnalyses, loadDatasets, loadModels]);
+
+  useEffect(() => {
+    if (analysisId && analysisStatus === 'running') {
+      const interval = setInterval(checkAnalysisStatus, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [analysisId, analysisStatus, checkAnalysisStatus]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -146,39 +175,6 @@ const AnalysisPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to start analysis:', error);
       alert('Не удалось запустить анализ');
-      setLoading(false);
-    }
-  };
-
-  const checkAnalysisStatus = async () => {
-    if (!analysisId) return;
-
-    try {
-      const response = await analysesAPI.getAnalysisStatus(analysisId);
-      const status = response.data.status;
-      setAnalysisStatus(status);
-
-      if (status === 'completed') {
-        loadResults();
-      } else if (status === 'failed') {
-        alert('Не удалось выполнить анализ');
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error('Failed to check status:', error);
-    }
-  };
-
-  const loadResults = async () => {
-    if (!analysisId) return;
-
-    try {
-      await analysesAPI.getAnalysisResults(analysisId);
-      // Redirect to results page
-      navigate(`/analysis/${analysisId}/results`);
-      loadAnalyses(); // Refresh list
-    } catch (error) {
-      console.error('Failed to load results:', error);
       setLoading(false);
     }
   };

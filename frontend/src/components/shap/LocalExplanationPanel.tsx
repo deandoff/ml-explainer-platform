@@ -74,20 +74,29 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
   const [tabValue, setTabValue] = useState(0);
 
   useEffect(() => {
-    loadExplanation();
-  }, [analysisId, sampleId]);
+    let isActive = true;
 
-  const loadExplanation = async () => {
-    setLoading(true);
-    try {
-      const response = await shapInteractiveAPI.getLocalExplanation(analysisId, sampleId);
-      setExplanation(response.data);
-    } catch (error) {
-      console.error('Failed to load local explanation:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadExplanation = async () => {
+      setLoading(true);
+      try {
+        const response = await shapInteractiveAPI.getLocalExplanation(analysisId, sampleId);
+        if (isActive) {
+          setExplanation(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to load local explanation:', error);
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadExplanation();
+    return () => {
+      isActive = false;
+    };
+  }, [analysisId, sampleId]);
 
   const renderWaterfallPlot = () => {
     if (!explanation) return null;

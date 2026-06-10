@@ -1,0 +1,240 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BACKEND_IMAGE: ghcr.io/${{ github.repository }}-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}-frontend
+
+jobs:
+  ci:
+    name: Проверки
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v6
+
+      - name: Установить Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Проверить синтаксис Python
+        run: python -m compileall -q backend/app backend/alembic backend/scripts
+
+      - name: Проверить production Compose
+        env:
+          ENV_FILE: .env.production.example
+        run: docker compose -f compose.prod.yml config --quiet
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Установить frontend-зависимости
+        working-directory: frontend
+        run: npm ci
+
+      - name: Проверить production-зависимости frontend
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Собрать frontend
+        working-directory: frontend
+        env:
+          CI: "true"
+          GENERATE_SOURCEMAP: "false"
+          REACT_APP_API_URL: ""
+        run: npm run build
+
+  changes:
+    name: Определение изменившихся образов
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Определить изменившиеся каталоги
+        id: filter
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          backend=false
+          frontend=false
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ||
+                -z "$BEFORE_SHA" ||
+                "$BEFORE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+            backend=true
+            frontend=true
+          else
+            if ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- backend/; then
+              backend=true
+            fi
+            if ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- frontend/; then
+              frontend=true
+            fi
+          fi
+
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Сборка и публикация образов
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs:
+      - ci
+      - changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            image: ghcr.io/${{ github.repository }}-backend
+          - service: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile.prod
+            image: ghcr.io/${{ github.repository }}-frontend
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v6
+
+      - name: Настроить Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Войти в GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Собрать и опубликовать ${{ matrix.service }}
+        if: >-
+          (matrix.service == 'backend' && needs.changes.outputs.backend == 'true') ||
+          (matrix.service == 'frontend' && needs.changes.outputs.frontend == 'true')
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ matrix.image }}:${{ github.sha }}
+            ${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          provenance: true
+          sbom: true
+
+      - name: Создать SHA-тег для неизменившегося ${{ matrix.service }}
+        if: >-
+          (matrix.service == 'backend' && needs.changes.outputs.backend != 'true') ||
+          (matrix.service == 'frontend' && needs.changes.outputs.frontend != 'true')
+        run: |
+          docker buildx imagetools create \
+            --tag "${{ matrix.image }}:${{ github.sha }}" \
+            "${{ matrix.image }}:latest"
+
+  deploy:
+    name: Деплой в production
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      vars.DEPLOY_ENABLED == 'true'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v6
+
+      - name: Настроить SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Передать deployment-файлы
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/ml-explainer' }}
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_PATH/deploy'"
+          scp -P "$DEPLOY_PORT" compose.prod.yml \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/compose.prod.yml"
+          scp -P "$DEPLOY_PORT" deploy/remote-deploy.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/deploy/remote-deploy.sh"
+
+      - name: Войти в GHCR на сервере
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker login ghcr.io --username '$GITHUB_ACTOR' --password-stdin"
+
+      - name: Выполнить деплой
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/ml-explainer' }}
+        run: |
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "chmod 700 '$DEPLOY_PATH/deploy/remote-deploy.sh' && \
+            APP_DIR='$DEPLOY_PATH' \
+            BACKEND_IMAGE='$BACKEND_IMAGE:$GITHUB_SHA' \
+            FRONTEND_IMAGE='$FRONTEND_IMAGE:$GITHUB_SHA' \
+            '$DEPLOY_PATH/deploy/remote-deploy.sh'"

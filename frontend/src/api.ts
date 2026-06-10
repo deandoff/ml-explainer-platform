@@ -1,13 +1,35 @@
-import axios from 'axios';
+import axios, { AxiosRequestConfig } from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_API_URL || '';
 
 const api = axios.create({
   baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
+
+export interface UploadTarget {
+  upload_url: string;
+  upload_method: 'POST' | 'PUT';
+  content_type: string;
+}
+
+export const uploadFile = async (target: UploadTarget, file: File) => {
+  if (target.upload_method === 'PUT') {
+    return axios.put(target.upload_url, file, {
+      headers: {
+        'Content-Type': target.content_type,
+      },
+    });
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post(target.upload_url, formData);
+};
+
+export const downloadPrivateFile = (url: string) => {
+  const config: AxiosRequestConfig = { responseType: 'blob' };
+  return url.startsWith('/') ? api.get(url, config) : axios.get(url, config);
+};
 
 // Models API
 export const modelsAPI = {

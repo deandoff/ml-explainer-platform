@@ -133,3 +133,5 @@ class PresignedUrlResponse(BaseModel):
     upload_url: str
     s3_key: str
     expires_in: int = 3600
+    upload_method: str
+    content_type: str

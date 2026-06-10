@@ -8,6 +8,7 @@ from app.models.models import Dataset as DatasetDB
 from app.schemas.schemas import DatasetCreate, DatasetResponse, PresignedUrlResponse
 from app.services.storage import storage_service
 from app.core.config import settings
+from starlette.concurrency import run_in_threadpool
 import pandas as pd
 import tempfile
 import os
@@ -18,36 +19,55 @@ router = APIRouter()
 @router.post("/upload-url", response_model=PresignedUrlResponse)
 async def get_upload_url(
     current_user_id: UUID = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
 ):
     """Generate presigned URL for dataset upload"""
     try:
+        content_type = "text/csv"
         # Include user_id in storage path for isolation
         upload_url, s3_key = storage_service.generate_presigned_upload_url(
-            file_type="text/csv",
+            file_type=content_type,
             prefix=f"artifacts/datasets/{current_user_id}"
         )
 
         # For local storage, return API endpoint instead of file path
         if settings.STORAGE_MODE == "local":
-            upload_url = f"http://localhost:8000/api/datasets/upload/{s3_key}"
+            upload_url = f"/api/datasets/upload/{s3_key}"
 
         return PresignedUrlResponse(
             upload_url=upload_url,
             s3_key=s3_key,
-            expires_in=3600
+            expires_in=3600,
+            upload_method="POST" if settings.STORAGE_MODE == "local" else "PUT",
+            content_type=content_type,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
 
 
 @router.post("/upload/{s3_key:path}")
-async def upload_file_direct(s3_key: str, file: UploadFile = File(...)):
+async def upload_file_direct(
+    s3_key: str,
+    file: UploadFile = File(...),
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     """Direct file upload endpoint for local storage"""
+    if settings.STORAGE_MODE != "local":
+        raise HTTPException(status_code=404, detail="Local uploads are disabled")
+
+    expected_prefix = f"artifacts/datasets/{current_user_id}/"
+    if not s3_key.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="Invalid storage key")
+
     try:
-        content = await file.read()
-        storage_service.save_uploaded_file(s3_key, content)
+        await run_in_threadpool(
+            storage_service.save_uploaded_file,
+            s3_key,
+            file.file,
+            settings.MAX_UPLOAD_SIZE_BYTES,
+        )
         return {"status": "success"}
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
@@ -60,8 +80,14 @@ async def create_dataset(
 ):
     """Create dataset record after successful upload"""
     s3_key = dataset.s3_key
+    expected_prefix = f"artifacts/datasets/{current_user_id}/"
+    if not s3_key.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="Invalid storage key")
+
     try:
         file_size = storage_service.get_file_size(s3_key)
+        if file_size is None:
+            raise HTTPException(status_code=400, detail="Uploaded dataset file not found")
 
         # Download and analyze dataset
         with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
@@ -87,6 +113,8 @@ async def create_dataset(
         db.refresh(db_dataset)
 
         return db_dataset
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create dataset: {str(e)}")
@@ -176,7 +204,7 @@ async def download_dataset(
 
         # For local storage, return API endpoint instead of file path
         if settings.STORAGE_MODE == "local":
-            download_url = f"http://localhost:8000/api/datasets/download-file/{dataset.s3_key}"
+            download_url = f"/api/datasets/download-file/{dataset.s3_key}"
 
         return {
             "download_url": download_url,

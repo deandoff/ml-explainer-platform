@@ -10,7 +10,7 @@ import {
   InputLabel,
   Grid,
   CircularProgress,
-} from "@mui/material";
+} from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
@@ -39,20 +39,29 @@ const InlineDependencePlot: React.FC<Props> = ({
   const [featureStats, setFeatureStats] = useState<any>(null);
 
   useEffect(() => {
-    loadFeatureStats();
-  }, [analysisId, featureName]);
+    let isActive = true;
 
-  const loadFeatureStats = async () => {
-    setLoading(true);
-    try {
-      const response = await shapInteractiveAPI.getFeatureStats(analysisId, featureName);
-      setFeatureStats(response.data);
-    } catch (error) {
-      console.error('Failed to load feature stats:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const loadFeatureStats = async () => {
+      setLoading(true);
+      try {
+        const response = await shapInteractiveAPI.getFeatureStats(analysisId, featureName);
+        if (isActive) {
+          setFeatureStats(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to load feature stats:', error);
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadFeatureStats();
+    return () => {
+      isActive = false;
+    };
+  }, [analysisId, featureName]);
 
   // Prepare dependence plot data
   const plotData = React.useMemo<Data[]>(() => {

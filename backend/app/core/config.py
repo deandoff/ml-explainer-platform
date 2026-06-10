@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REGISTRATION_ENABLED: bool = True
+
+    # Uploads
+    MAX_UPLOAD_SIZE_BYTES: int = 2 * 1024 * 1024 * 1024
 
     # Celery
     CELERY_BROKER_URL: str
@@ -45,7 +49,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
-        extra = "ignore"  # Ignore extra fields in .env
+        extra = "ignore"
 
 
 settings = Settings()
