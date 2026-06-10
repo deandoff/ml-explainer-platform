@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
@@ -11,7 +11,6 @@ from datetime import datetime
 import os
 
 router = APIRouter()
-
 
 @router.post("/", response_model=AnalysisResponse)
 async def create_analysis(
@@ -36,7 +35,6 @@ async def create_analysis(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Create analysis record
     db_analysis = AnalysisDB(
         user_id=current_user_id,
         model_id=analysis.model_id,
@@ -49,7 +47,6 @@ async def create_analysis(
     db.commit()
     db.refresh(db_analysis)
 
-    # Start Celery task
     try:
         task_name = (
             "app.core.tasks.run_shap_analysis"
@@ -67,7 +64,6 @@ async def create_analysis(
             },
         )
 
-        # Update with task ID
         db_analysis.celery_task_id = task.id
         db_analysis.status = AnalysisStatus.RUNNING
         db_analysis.started_at = datetime.utcnow()
@@ -81,7 +77,6 @@ async def create_analysis(
         db_analysis.error_message = str(e)
         db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to start analysis: {str(e)}")
-
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)
 async def get_analysis(
@@ -97,7 +92,6 @@ async def get_analysis(
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return analysis
-
 
 @router.get("/{analysis_id}/status")
 async def get_analysis_status(
@@ -120,18 +114,27 @@ async def get_analysis_status(
 
         if task.state == 'SUCCESS':
             result = task.result
-            if result.get('status') == 'failed':
-                analysis.status = AnalysisStatus.FAILED
-                analysis.error_message = result.get('error', 'Analysis failed')
-            else:
+            if (
+                isinstance(result, dict)
+                and result.get('status') == 'completed'
+                and result.get('result_s3_key')
+            ):
                 analysis.status = AnalysisStatus.COMPLETED
-                analysis.result_s3_key = result.get('result_s3_key')
-            analysis.completed_at = datetime.utcnow()
+                analysis.result_s3_key = result['result_s3_key']
+                analysis.completed_at = datetime.utcnow()
+            else:
+                analysis.status = AnalysisStatus.FAILED
+                analysis.error_message = (
+                    result.get('error', 'Analysis task returned an invalid result')
+                    if isinstance(result, dict)
+                    else 'Analysis task returned an invalid result'
+                )
             db.commit()
 
         elif task.state == 'FAILURE':
             analysis.status = AnalysisStatus.FAILED
             analysis.error_message = str(task.info)
+            analysis.completed_at = datetime.utcnow()
             db.commit()
 
         return {
@@ -145,7 +148,6 @@ async def get_analysis_status(
         "analysis_id": str(analysis.id),
         "status": analysis.status.value
     }
-
 
 @router.get("/{analysis_id}/results")
 async def get_analysis_results(
@@ -179,7 +181,6 @@ async def get_analysis_results(
         os.unlink(tmp_file.name)
 
     return results_data
-
 
 @router.get("/", response_model=List[AnalysisResponse])
 async def list_analyses(

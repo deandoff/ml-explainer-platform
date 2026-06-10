@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -45,42 +45,35 @@ const LimeResultsPage: React.FC = () => {
   const [whatIfValues, setWhatIfValues] = useState<any>({});
   const [showTopN, setShowTopN] = useState(10);
 
-  useEffect(() => {
-    let isActive = true;
+  const loadResults = useCallback(async () => {
+    if (!analysisId) return;
 
-    const loadResults = async () => {
-      if (!analysisId) return;
+    try {
+      const response = await analysesAPI.getAnalysisResults(analysisId);
+      setResults(response.data);
 
-      try {
-        const response = await analysesAPI.getAnalysisResults(analysisId);
-        if (!isActive) return;
+      if (response.data.instance_explanations?.[0]) {
+        const firstInstance = response.data.instance_explanations[0];
+        setInstanceData(firstInstance);
 
-        setResults(response.data);
-
-        if (response.data.instance_explanations?.[0]) {
-          const firstInstance = response.data.instance_explanations[0];
-          setInstanceData(firstInstance);
-
-          const initialValues: any = {};
-          Object.keys(firstInstance.explanation.feature_importance).forEach(feature => {
-            initialValues[feature] = 0;
-          });
-          setWhatIfValues(initialValues);
-        }
-      } catch (error) {
-        console.error('Failed to load results:', error);
-      } finally {
-        if (isActive) {
-          setLoading(false);
-        }
+        const initialValues: any = {};
+        Object.keys(firstInstance.explanation.feature_importance).forEach(feature => {
+          initialValues[feature] = 0;
+        });
+        setWhatIfValues(initialValues);
       }
     };
 
-    loadResults();
-    return () => {
-      isActive = false;
-    };
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to load results:', error);
+      setLoading(false);
+    }
   }, [analysisId]);
+
+  useEffect(() => {
+    loadResults();
+  }, [loadResults]);
 
   if (loading) {
     return (
@@ -116,9 +109,12 @@ const LimeResultsPage: React.FC = () => {
 
   const predictedClass = predictionProba.indexOf(Math.max(...predictionProba));
   const confidence = Math.max(...predictionProba);
+  const baselineProbability = Number(instanceData.explanation.intercept);
+  const localPrediction = Number(instanceData.explanation.local_prediction);
+  const localFidelity = Math.max(0, Math.min(1, Number(instanceData.explanation.local_fidelity)));
+  const approximationError = Math.abs(localPrediction - confidence);
 
   // Calculate prediction breakdown
-  const baselineProbability = 1 / predictionProba.length; // Uniform baseline
   const positiveContribution = positiveFeatures.reduce((sum, [, val]) => sum + (val as number), 0);
   const negativeContribution = negativeFeatures.reduce((sum, [, val]) => sum + (val as number), 0);
   const totalContribution = positiveContribution + negativeContribution;
@@ -162,42 +158,25 @@ const LimeResultsPage: React.FC = () => {
     // Calculate dominant feature share
     const dominantShare = sortedFeatures[0] ? Math.abs(sortedFeatures[0][1] as number) / totalContribution : 0;
 
-    // Trust score based on concentration and confidence
-    let trustScore = 0;
-
-    // Factor 1: Feature concentration (40 points)
-    if (concentration > 0.7) trustScore += 40;
-    else if (concentration > 0.5) trustScore += 30;
-    else if (concentration > 0.3) trustScore += 20;
-    else trustScore += 10;
-
-    // Factor 2: Prediction confidence (30 points)
-    if (confidence > 0.8) trustScore += 30;
-    else if (confidence > 0.6) trustScore += 20;
-    else if (confidence > 0.5) trustScore += 10;
-
-    // Factor 3: Number of active features (30 points)
     const activeCount = Object.values(featureImportance).filter(v => Math.abs(v as number) > 0.001).length;
-    if (activeCount <= 5) trustScore += 30;
-    else if (activeCount <= 10) trustScore += 20;
-    else if (activeCount <= 15) trustScore += 10;
+    const trustScore = Math.round(localFidelity * 100);
 
     let level = 'Низкая';
     let color: 'error' | 'warning' | 'success' = 'error';
     let message = '';
 
-    if (trustScore >= 70) {
+    if (trustScore >= 80) {
       level = 'Высокая';
       color = 'success';
-      message = 'Объяснение надежно: несколько ключевых признаков явно определяют предсказание.';
+      message = 'Локальная модель LIME хорошо приближает поведение исходной модели вокруг этого объекта.';
     } else if (trustScore >= 50) {
       level = 'Средняя';
       color = 'warning';
-      message = 'Объяснение умеренно надежно: влияет несколько признаков, но общая закономерность прослеживается.';
+      message = 'Локальная модель LIME лишь частично приближает исходную модель; вклады следует интерпретировать с осторожностью.';
     } else {
       level = 'Низкая';
       color = 'error';
-      message = 'Объяснение может быть нестабильным: вклад распределен между многими признаками без явного лидера.';
+      message = 'Локальная модель LIME плохо приближает исходную модель для этого объекта; объяснение нельзя считать надежным.';
     }
 
     return {
@@ -245,15 +224,13 @@ const LimeResultsPage: React.FC = () => {
   const getConsistencyWarnings = () => {
     const warnings = [];
 
-    // Warning 1: High confidence but weak explanation
-    if (confidence > 0.8 && trustInfo.score < 50) {
+    if (approximationError > 0.1) {
       warnings.push({
-        severity: 'warning' as const,
-        message: 'Уверенность модели высокая (>80%), но ни один признак не дает убедительного объяснения. Интерпретируйте результат с осторожностью.'
+        severity: 'error' as const,
+        message: `Локальный прогноз LIME отличается от прогноза модели на ${(approximationError * 100).toFixed(1)} п.п. Вклады признаков для этого объекта ненадежны.`
       });
     }
 
-    // Warning 2: Too many features contribute equally
     if (trustInfo.activeFeatures > 15 && parseFloat(trustInfo.dominantShare) < 20) {
       warnings.push({
         severity: 'warning' as const,
@@ -261,7 +238,6 @@ const LimeResultsPage: React.FC = () => {
       });
     }
 
-    // Warning 3: Low confidence
     if (confidence < 0.6) {
       warnings.push({
         severity: 'info' as const,
@@ -386,9 +362,9 @@ const LimeResultsPage: React.FC = () => {
                   <Divider sx={{ my: 2 }} />
 
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6" fontWeight="bold">Итоговая вероятность</Typography>
+                    <Typography variant="h6" fontWeight="bold">Локальная аппроксимация LIME</Typography>
                     <Typography variant="h5" color="primary" fontWeight="bold">
-                      {(confidence * 100).toFixed(1)}%
+                      {(localPrediction * 100).toFixed(1)}%
                     </Typography>
                   </Box>
 
@@ -793,7 +769,9 @@ const LimeResultsPage: React.FC = () => {
 
                     const newProbability = Math.max(0, Math.min(1, confidence + predictionDelta));
                     const probabilityChange = newProbability - confidence;
-                    const newPredictedClass = newProbability > 0.5 ? 1 : 0;
+                    const newPredictedClass = predictionProba.length === 2 && newProbability < 0.5
+                      ? (predictedClass === 0 ? 1 : 0)
+                      : predictedClass;
                     const classChanged = newPredictedClass !== predictedClass;
 
                     return (
@@ -920,6 +898,34 @@ const LimeResultsPage: React.FC = () => {
                   </Grid>
                 ))}
               </Grid>
+            </CardContent>
+          </Card>
+        )}
+
+        {results.visualizations?.confusion_matrix && (
+          <Card sx={{ mt: 3 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Матрица ошибок
+              </Typography>
+              <Plot
+                data={results.visualizations.confusion_matrix.data}
+                layout={{
+                  ...results.visualizations.confusion_matrix.layout,
+                  title: { text: 'Матрица ошибок' },
+                  xaxis: {
+                    ...results.visualizations.confusion_matrix.layout?.xaxis,
+                    title: { text: 'Предсказанный класс' },
+                  },
+                  yaxis: {
+                    ...results.visualizations.confusion_matrix.layout?.yaxis,
+                    title: { text: 'Фактический класс' },
+                  },
+                  autosize: true,
+                }}
+                config={{ ...russianPlotlyConfig, responsive: true }}
+                style={{ width: '100%' }}
+              />
             </CardContent>
           </Card>
         )}

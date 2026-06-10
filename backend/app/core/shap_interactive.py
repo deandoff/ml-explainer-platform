@@ -3,10 +3,50 @@ Interactive SHAP data preparation
 Converts SHAP values to structured JSON for frontend visualization
 """
 import numpy as np
-import pandas as pd
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import shap
+
+
+def _prepare_waterfall_data(
+    feature_contributions: List[Dict[str, Any]],
+    base_value: float,
+    max_features: int = 20
+) -> List[Dict[str, Any]]:
+    displayed_contributions = feature_contributions
+
+    if len(feature_contributions) > max_features:
+        visible_contributions = feature_contributions[:max_features - 1]
+        hidden_contributions = feature_contributions[max_features - 1:]
+        hidden_shap_value = sum(
+            contribution['shap_value']
+            for contribution in hidden_contributions
+        )
+        displayed_contributions = [
+            *visible_contributions,
+            {
+                'feature': f'Остальные признаки ({len(hidden_contributions)})',
+                'value': 0.0,
+                'shap_value': hidden_shap_value,
+                'abs_shap': abs(hidden_shap_value)
+            }
+        ]
+
+    waterfall_data = []
+    cumulative = base_value
+
+    for contribution in displayed_contributions:
+        next_value = cumulative + contribution['shap_value']
+        waterfall_data.append({
+            'feature': contribution['feature'],
+            'value': contribution['value'],
+            'shap_value': contribution['shap_value'],
+            'start': cumulative,
+            'end': next_value
+        })
+        cumulative = next_value
+
+    return waterfall_data
 
 
 def prepare_shap_interactive_data(
@@ -15,7 +55,8 @@ def prepare_shap_interactive_data(
     feature_names: List[str],
     predictions: np.ndarray,
     base_value: float,
-    sample_indices: Optional[List[int]] = None
+    sample_indices: Optional[List[int]] = None,
+    output_index: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Prepare SHAP data for interactive visualization
@@ -84,6 +125,7 @@ def prepare_shap_interactive_data(
         'points': points_data,
         'feature_importance': feature_importance,
         'base_value': float(base_value),
+        'explained_output': output_index,
         'n_samples': n_samples,
         'n_features': n_features,
         'feature_names': feature_names,
@@ -127,19 +169,10 @@ def prepare_local_explanation(
 
     feature_contributions.sort(key=lambda x: x['abs_shap'], reverse=True)
 
-    # Waterfall data (cumulative sum)
-    waterfall_data = []
-    cumulative = base_value
-
-    for contrib in feature_contributions:
-        waterfall_data.append({
-            'feature': contrib['feature'],
-            'value': contrib['value'],
-            'shap_value': contrib['shap_value'],
-            'start': cumulative,
-            'end': cumulative + contrib['shap_value']
-        })
-        cumulative += contrib['shap_value']
+    waterfall_data = _prepare_waterfall_data(
+        feature_contributions,
+        base_value
+    )
 
     # Force plot data (for horizontal bar visualization)
     positive_contributions = [c for c in feature_contributions if c['shap_value'] > 0]
@@ -150,7 +183,7 @@ def prepare_local_explanation(
         'base_value': float(base_value),
         'prediction': float(prediction),
         'feature_contributions': feature_contributions[:20],  # Top 20
-        'waterfall_data': waterfall_data[:20],
+        'waterfall_data': waterfall_data,
         'force_plot': {
             'positive': positive_contributions[:10],
             'negative': negative_contributions[:10]
