@@ -187,7 +187,7 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
     );
   };
 
-  const renderForcePlot = () => {
+  const renderContributionTables = () => {
     if (!explanation) return null;
 
     const positive = explanation.force_plot.positive;
@@ -237,7 +237,7 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
     return (
       <Box>
         <Typography variant="h6" gutterBottom>
-          Силовой график влияния признаков
+          Положительные и отрицательные вклады признаков
         </Typography>
 
         <Box sx={{ display: 'flex', gap: 3, mt: 3 }}>
@@ -359,7 +359,7 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
       {/* Tabs */}
       <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 2 }}>
         <Tab label="Каскадный график" />
-        <Tab label="Силовой график" />
+        <Tab label="Вклады признаков" />
         <Tab label="Таблица признаков" />
         <Tab label="Анализ «что, если»" />
       </Tabs>
@@ -367,7 +367,7 @@ const LocalExplanationPanel: React.FC<Props> = ({ analysisId, sampleId, onClose 
       {/* Content */}
       <Box>
         {tabValue === 0 && renderWaterfallPlot()}
-        {tabValue === 1 && renderForcePlot()}
+        {tabValue === 1 && renderContributionTables()}
         {tabValue === 2 && renderFeatureTable()}
         {tabValue === 3 && (
           <WhatIfAnalysis

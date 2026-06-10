@@ -12,7 +12,6 @@ from typing import Dict, Any, List
 import io
 import base64
 
-
 def fig_to_base64(fig) -> str:
     """Convert matplotlib figure to base64 string"""
     buf = io.BytesIO()
@@ -21,7 +20,6 @@ def fig_to_base64(fig) -> str:
     img_base64 = base64.b64encode(buf.read()).decode('utf-8')
     plt.close(fig)
     return f"data:image/png;base64,{img_base64}"
-
 
 def generate_shap_summary_plot_native(
     shap_values: np.ndarray,
@@ -42,7 +40,6 @@ def generate_shap_summary_plot_native(
     plt.figure(figsize=(12, 8))
     plt.rcParams.update({'font.size': 11})
 
-    # Create Explanation object for new SHAP API
     if not isinstance(shap_values, shap.Explanation):
         explanation = shap.Explanation(
             values=shap_values,
@@ -53,7 +50,13 @@ def generate_shap_summary_plot_native(
         explanation = shap_values
 
     # Use new SHAP plots API
-    shap.plots.beeswarm(explanation, show=False, max_display=20, order=shap_values.abs.max(0), color=plt.get_cmap("cool"))
+    shap.plots.beeswarm(
+        explanation,
+        show=False,
+        max_display=20,
+        order=explanation.abs.max(0),
+        color=plt.get_cmap("cool"),
+    )
 
     fig = plt.gcf()
     img_base64 = fig_to_base64(fig)
@@ -63,7 +66,6 @@ def generate_shap_summary_plot_native(
         'image': img_base64,
         'title': 'SHAP Summary Plot'
     }
-
 
 def generate_shap_waterfall_native(
     shap_values: np.ndarray,
@@ -88,7 +90,6 @@ def generate_shap_waterfall_native(
     plt.figure(figsize=(12, 8))
     plt.rcParams.update({'font.size': 11})
 
-    # Create Explanation object for waterfall plot
     if not isinstance(shap_values, shap.Explanation):
         explanation = shap.Explanation(
             values=shap_values[instance_idx],
@@ -110,7 +111,6 @@ def generate_shap_waterfall_native(
         'image': img_base64,
         'title': f'SHAP Waterfall Plot - Instance {instance_idx}'
     }
-
 
 def generate_shap_dependence_native(
     shap_values: np.ndarray,
@@ -159,7 +159,6 @@ def generate_shap_dependence_native(
         'title': f'SHAP Dependence Plot: {feature_name}'
     }
 
-
 def generate_shap_bar_plot_native(
     shap_values: np.ndarray,
     feature_names: List[str],
@@ -179,7 +178,6 @@ def generate_shap_bar_plot_native(
     plt.figure(figsize=(10, 8))
     plt.rcParams.update({'font.size': 11})
 
-    # Create Explanation object for new SHAP API
     if not isinstance(shap_values, shap.Explanation):
         explanation = shap.Explanation(
             values=shap_values,

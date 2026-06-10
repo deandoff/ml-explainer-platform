@@ -18,6 +18,7 @@ import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
 import { whatIfAPI } from '../../api';
 import { russianPlotlyConfig } from '../../utils/plotlyConfig';
+import { buildCompleteWaterfall } from '../../utils/shapWaterfall';
 
 interface FeatureChange {
   feature: string;
@@ -127,23 +128,11 @@ const WhatIfAnalysis: React.FC<Props> = ({
     baseValue: number,
     prediction: number
   ) => {
-    // Sort by absolute SHAP value and take top 10
-    const sortedFeatures = [...features]
-      .sort((a, b) => Math.abs(b.shap_value) - Math.abs(a.shap_value))
-      .slice(0, 10);
-
-    let cumulative = baseValue;
-    const waterfallData = sortedFeatures.map(f => {
-      const start = cumulative;
-      const end = cumulative + f.shap_value;
-      cumulative = end;
-      return {
-        feature: f.feature,
-        shap_value: f.shap_value,
-        start: start,
-        end: end
-      };
-    });
+    const waterfallData = buildCompleteWaterfall(
+      features,
+      baseValue,
+      prediction
+    );
 
     const x = waterfallData.map(d => d.shap_value);
     const y = waterfallData.map(d => d.feature);

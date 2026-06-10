@@ -78,7 +78,7 @@ const ComparisonView: React.FC<Props> = ({ analysisId, sampleIds, onClose }) => 
       return <Typography color="text.secondary">Нет данных</Typography>;
     }
 
-    const data = explanation.waterfall_data.slice(0, 10);
+    const data = explanation.waterfall_data;
 
     // Waterfall chart data
     const x = data.map(d => d.shap_value);

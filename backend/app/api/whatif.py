@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict
 from uuid import UUID
 from pydantic import BaseModel
 from app.core.database import get_db
@@ -8,19 +8,30 @@ from app.core.auth import get_current_user_id
 from app.models.models import Analysis
 from app.services.storage import storage_service
 from app.core.model_loader import ModelLoader
+from app.core.explainers import SHAPExplainer
+from app.core.analysis_utils import (
+    select_prediction_output,
+    select_shap_output,
+)
 import tempfile
 import json
 import os
 import numpy as np
-import shap
+import pandas as pd
+import logging
 
 router = APIRouter()
-
+logger = logging.getLogger(__name__)
 
 class WhatIfRequest(BaseModel):
     sample_id: int
     modified_features: Dict[str, float]
 
+def get_interactive_data(results):
+    visualizations = results.get('visualizations')
+    if not isinstance(visualizations, dict):
+        return None
+    return visualizations.get('interactive_data')
 
 @router.post("/{analysis_id}/what-if")
 async def what_if_analysis(
@@ -55,7 +66,6 @@ async def what_if_analysis(
     if not analysis.result_s3_key:
         raise HTTPException(status_code=404, detail="Analysis results not found")
 
-    # Load analysis results
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.json') as tmp_file:
             storage_service.download_file(analysis.result_s3_key, tmp_file.name)
@@ -65,8 +75,7 @@ async def what_if_analysis(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load results: {str(e)}")
 
-    # Extract interactive data
-    interactive_data = results.get('visualizations', {}).get('interactive_data')
+    interactive_data = get_interactive_data(results)
     if not interactive_data:
         raise HTTPException(status_code=404, detail="Interactive data not available")
 
@@ -80,7 +89,6 @@ async def what_if_analysis(
     if not sample_data:
         raise HTTPException(status_code=404, detail=f"Sample {request.sample_id} not found")
 
-    # Load model
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp_model:
             storage_service.download_file(analysis.model.s3_key, tmp_model.name)
@@ -91,98 +99,71 @@ async def what_if_analysis(
 
     # Prepare original and modified feature vectors
     feature_names = interactive_data['feature_names']
+    unknown_features = set(request.modified_features) - set(feature_names)
+    if unknown_features:
+        unknown_list = ", ".join(sorted(unknown_features))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown feature names: {unknown_list}",
+        )
+
     original_features = np.array([sample_data['features'][f]['value'] for f in feature_names])
     modified_features = original_features.copy()
 
     # Apply modifications
     for feature_name, new_value in request.modified_features.items():
-        if feature_name in feature_names:
-            idx = feature_names.index(feature_name)
-            modified_features[idx] = new_value
+        idx = feature_names.index(feature_name)
+        modified_features[idx] = new_value
 
-    # Reshape for prediction
-    original_features_2d = original_features.reshape(1, -1)
-    modified_features_2d = modified_features.reshape(1, -1)
+    original_features_df = pd.DataFrame([original_features], columns=feature_names)
+    modified_features_df = pd.DataFrame([modified_features], columns=feature_names)
+    model_type = getattr(analysis.model.model_type, "value", analysis.model.model_type)
+    output_index = interactive_data.get('explained_output')
 
-    # Get predictions
     try:
-        original_prediction = ModelLoader.predict(model, original_features_2d, analysis.model.model_type)
-        new_prediction = ModelLoader.predict(model, modified_features_2d, analysis.model.model_type)
-
-        # Handle array outputs
-        if isinstance(original_prediction, np.ndarray):
-            original_prediction = float(original_prediction.flatten()[0])
-        else:
-            original_prediction = float(original_prediction)
-
-        if isinstance(new_prediction, np.ndarray):
-            new_prediction = float(new_prediction.flatten()[0])
-        else:
-            new_prediction = float(new_prediction)
+        original_predictions = ModelLoader.predict(model, original_features_df, model_type)
+        new_predictions = ModelLoader.predict(model, modified_features_df, model_type)
+        original_prediction = float(
+            select_prediction_output(original_predictions, output_index)[0][0]
+        )
+        new_prediction = float(
+            select_prediction_output(new_predictions, output_index)[0][0]
+        )
 
     except Exception as e:
-        import traceback
-        print(f"Prediction error: {str(e)}")
-        print(traceback.format_exc())
+        logger.exception("Prediction failed for what-if analysis %s sample %s", analysis_id, request.sample_id)
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
-    # Calculate SHAP values for modified sample
     try:
-        # Use TreeExplainer for tree-based models, KernelExplainer for others
-        model_type = analysis.model.model_type.lower()
-
-        if model_type in ['xgboost', 'lightgbm', 'catboost', 'random_forest', 'gradient_boosting']:
-            explainer = shap.TreeExplainer(model)
-        else:
-            # For other models, use a small background dataset
-            background_size = min(100, len(interactive_data['points']))
-            background_data = np.array([
+        background_size = min(100, len(interactive_data['points']))
+        background_data = pd.DataFrame(
+            [
                 [point['features'][f]['value'] for f in feature_names]
                 for point in interactive_data['points'][:background_size]
-            ])
-            explainer = shap.KernelExplainer(
-                lambda x: ModelLoader.predict(model, x, analysis.model.model_type),
-                background_data
-            )
-
-        modified_shap_values = explainer.shap_values(modified_features_2d)
-
-        # Handle multi-output models (binary/multiclass classification)
-        if isinstance(modified_shap_values, list):
-            # For binary classification, use positive class (index 1)
-            modified_shap_values = modified_shap_values[1] if len(modified_shap_values) > 1 else modified_shap_values[0]
-
-        # Ensure it's a numpy array
-        modified_shap_values = np.array(modified_shap_values)
-
-        # Remove all extra dimensions until we get (n_features,) or (n_features, n_classes)
-        while len(modified_shap_values.shape) > 2:
-            modified_shap_values = modified_shap_values[0]
-
-        # If 2D, handle different cases
-        if len(modified_shap_values.shape) == 2:
-            # (1, n_features) - squeeze batch dimension
-            if modified_shap_values.shape[0] == 1:
-                modified_shap_values = modified_shap_values[0]
-            # (n_features, 2) - binary classification, take positive class
-            elif modified_shap_values.shape[1] == 2:
-                modified_shap_values = modified_shap_values[:, 1]
-            # (n_features, n_classes) - multiclass, take first class
-            else:
-                modified_shap_values = modified_shap_values[:, 0]
-
-        # Final check: should be 1D with n_features elements
-        if len(modified_shap_values.shape) != 1:
-            raise ValueError(f"Unexpected SHAP values shape: {modified_shap_values.shape}")
-
+            ],
+            columns=feature_names,
+        )
+        explainer = SHAPExplainer(
+            model,
+            model_type,
+            background_data,
+            output_index=output_index,
+        )
+        raw_modified_shap = explainer.explainer(modified_features_df)
+        modified_shap_values = select_shap_output(
+            raw_modified_shap.values,
+            output_index,
+        )[0]
     except Exception as e:
-        # Fallback: approximate SHAP changes using linear approximation
-        print(f"SHAP calculation failed, using approximation: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
-        original_shap_values = np.array([sample_data['features'][f]['shap_value'] for f in feature_names])
-        feature_deltas = modified_features - original_features
-        modified_shap_values = original_shap_values + feature_deltas * 0.1  # Simple approximation
+        logger.exception(
+            "SHAP recalculation failed for what-if analysis %s sample %s",
+            analysis_id,
+            request.sample_id
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"SHAP recalculation failed: {str(e)}",
+        )
 
     # Prepare response
     original_shap_values = np.array([sample_data['features'][f]['shap_value'] for f in feature_names])

@@ -9,11 +9,16 @@ import {
   Grid,
   Paper,
   Button,
-  Chip
+  Chip,
+  Card,
+  CardContent,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import Plot from 'react-plotly.js';
 import { analysesAPI, shapInteractiveAPI } from '../api';
+import { formatMetricName } from '../utils/localization';
+import { russianPlotlyConfig } from '../utils/plotlyConfig';
 import InteractiveSummaryPlot from '../components/shap/InteractiveSummaryPlot';
 import LocalExplanationPanel from '../components/shap/LocalExplanationPanel';
 import InlineDependencePlot from '../components/shap/InlineDependencePlot';
@@ -59,6 +64,7 @@ const AnalysisResultsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shapData, setShapData] = useState<SHAPData | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<any>(null);
   const [selectedSample, setSelectedSample] = useState<number | null>(null);
   const [comparisonSamples, setComparisonSamples] = useState<number[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -84,8 +90,12 @@ const AnalysisResultsPage: React.FC = () => {
       }
 
       if (method === 'shap') {
-        const shapResponse = await shapInteractiveAPI.getInteractiveData(analysisId);
+        const [shapResponse, resultsResponse] = await Promise.all([
+          shapInteractiveAPI.getInteractiveData(analysisId),
+          analysesAPI.getAnalysisResults(analysisId),
+        ]);
         setShapData(shapResponse.data);
+        setAnalysisResults(resultsResponse.data);
       }
     } catch (err: any) {
       console.error('Failed to load analysis:', err);
@@ -206,6 +216,9 @@ const AnalysisResultsPage: React.FC = () => {
 
   // Use filtered data if available, otherwise use original
   const displayData = filteredData || shapData;
+  const featureImportanceMax = displayData
+    ? Math.max(...Object.values(displayData.feature_importance).map(item => item.mean_abs_shap))
+    : 0;
 
   if (loading) {
     return (
@@ -384,7 +397,7 @@ const AnalysisResultsPage: React.FC = () => {
                     <Box
                       sx={{
                         height: '100%',
-                        width: `${(importance.mean_abs_shap / Object.values(displayData.feature_importance)[0].mean_abs_shap) * 100}%`,
+                        width: `${featureImportanceMax > 0 ? (importance.mean_abs_shap / featureImportanceMax) * 100 : 0}%`,
                         bgcolor: 'primary.main',
                         borderRadius: 1,
                         transition: 'width 0.3s ease-out'
@@ -396,6 +409,58 @@ const AnalysisResultsPage: React.FC = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      {analysisResults?.visualizations?.metrics && (
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Метрики качества модели
+            </Typography>
+            <Grid container spacing={2}>
+              {Object.entries(analysisResults.visualizations.metrics).map(([key, value]) => (
+                <Grid item xs={12} sm={6} md={2.4} key={key}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'rgba(25, 118, 210, 0.05)' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      {formatMetricName(key)}
+                    </Typography>
+                    <Typography variant="h6">
+                      {(value as number).toFixed(4)}
+                    </Typography>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
+
+      {analysisResults?.visualizations?.confusion_matrix && (
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Матрица ошибок
+            </Typography>
+            <Plot
+              data={analysisResults.visualizations.confusion_matrix.data}
+              layout={{
+                ...analysisResults.visualizations.confusion_matrix.layout,
+                title: { text: 'Матрица ошибок' },
+                xaxis: {
+                  ...analysisResults.visualizations.confusion_matrix.layout?.xaxis,
+                  title: { text: 'Предсказанный класс' },
+                },
+                yaxis: {
+                  ...analysisResults.visualizations.confusion_matrix.layout?.yaxis,
+                  title: { text: 'Фактический класс' },
+                },
+                autosize: true,
+              }}
+              config={{ ...russianPlotlyConfig, responsive: true }}
+              style={{ width: '100%' }}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Inline Dependence Plot (appears when feature clicked) */}
       {dependencePlotOpen && selectedFeature && displayData && analysisId && (

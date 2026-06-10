@@ -14,6 +14,7 @@ const metricLabels: Record<string, string> = {
   recall: 'Полнота',
   f1: 'F1-мера',
   f1_score: 'F1-мера',
+  auc: 'ROC AUC',
   roc_auc: 'ROC AUC',
   mse: 'Среднеквадратичная ошибка',
   rmse: 'Корень среднеквадратичной ошибки',
