@@ -187,6 +187,18 @@ const AnalysisResultsPage: React.FC = () => {
         params.append('feature_value_filters', JSON.stringify(filters.featureFilters));
       }
 
+      if (filters.showOutliers) {
+        params.append('outliers_only', 'true');
+      }
+
+      if (filters.showHighConfidence) {
+        params.append('high_output_only', 'true');
+      }
+
+      if (filters.showLowConfidence) {
+        params.append('low_output_only', 'true');
+      }
+
       // Load filtered data (or reset to original if no filters)
       if (params.toString()) {
         const response = await shapInteractiveAPI.getInteractiveData(analysisId, params);
@@ -336,7 +348,7 @@ const AnalysisResultsPage: React.FC = () => {
             </Typography>
             <Box sx={{ height: 'calc(100% - 80px)', width: '100%' }}>
               <InteractiveSummaryPlot
-                data={shapData}
+                data={displayData}
                 onPointClick={handlePointClick}
                 onFeatureClick={handleFeatureClick}
                 selectedSamples={comparisonSamples}

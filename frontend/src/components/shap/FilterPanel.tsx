@@ -58,12 +58,12 @@ const FilterPanel: React.FC<Props> = ({
       setFilters(prev => ({
         ...prev,
         shapRange: [
-          shapData.summary_stats.shap_range?.min || -1,
-          shapData.summary_stats.shap_range?.max || 1
+          shapData.summary_stats.shap_range?.min ?? -1,
+          shapData.summary_stats.shap_range?.max ?? 1
         ],
         predictionRange: [
-          shapData.summary_stats.prediction_min || 0,
-          shapData.summary_stats.prediction_max || 1
+          shapData.summary_stats.prediction_min ?? 0,
+          shapData.summary_stats.prediction_max ?? 1
         ]
       }));
     }
@@ -104,12 +104,12 @@ const FilterPanel: React.FC<Props> = ({
   const handleReset = () => {
     const resetFilters: FilterState = {
       shapRange: [
-        shapData?.summary_stats?.shap_range?.min || -1,
-        shapData?.summary_stats?.shap_range?.max || 1
+        shapData?.summary_stats?.shap_range?.min ?? -1,
+        shapData?.summary_stats?.shap_range?.max ?? 1
       ],
       predictionRange: [
-        shapData?.summary_stats?.prediction_min || 0,
-        shapData?.summary_stats?.prediction_max || 1
+        shapData?.summary_stats?.prediction_min ?? 0,
+        shapData?.summary_stats?.prediction_max ?? 1
       ],
       featureFilters: {},
       showOutliers: false,
@@ -189,13 +189,13 @@ const FilterPanel: React.FC<Props> = ({
               value={filters.shapRange}
               onChange={handleShapRangeChange}
               valueLabelDisplay="auto"
-              min={shapData?.summary_stats?.shap_range?.min || -1}
-              max={shapData?.summary_stats?.shap_range?.max || 1}
+              min={shapData?.summary_stats?.shap_range?.min ?? -1}
+              max={shapData?.summary_stats?.shap_range?.max ?? 1}
               step={0.01}
               marks={[
-                { value: shapData?.summary_stats?.shap_range?.min || -1, label: 'Мин.' },
+                { value: shapData?.summary_stats?.shap_range?.min ?? -1, label: 'Мин.' },
                 { value: 0, label: '0' },
-                { value: shapData?.summary_stats?.shap_range?.max || 1, label: 'Макс.' }
+                { value: shapData?.summary_stats?.shap_range?.max ?? 1, label: 'Макс.' }
               ]}
             />
             <Typography variant="caption" color="text.secondary">
@@ -214,12 +214,12 @@ const FilterPanel: React.FC<Props> = ({
               value={filters.predictionRange}
               onChange={handlePredictionRangeChange}
               valueLabelDisplay="auto"
-              min={shapData?.summary_stats?.prediction_min || 0}
-              max={shapData?.summary_stats?.prediction_max || 1}
+              min={shapData?.summary_stats?.prediction_min ?? 0}
+              max={shapData?.summary_stats?.prediction_max ?? 1}
               step={0.01}
               marks={[
-                { value: shapData?.summary_stats?.prediction_min || 0, label: 'Мин.' },
-                { value: shapData?.summary_stats?.prediction_max || 1, label: 'Макс.' }
+                { value: shapData?.summary_stats?.prediction_min ?? 0, label: 'Мин.' },
+                { value: shapData?.summary_stats?.prediction_max ?? 1, label: 'Макс.' }
               ]}
             />
             <Typography variant="caption" color="text.secondary">
@@ -281,7 +281,7 @@ const FilterPanel: React.FC<Props> = ({
                   onChange={() => handleCheckboxChange('showOutliers')}
                 />
               }
-              label="Показывать только выбросы"
+              label="Объекты с максимальным |SHAP| (верхние 5%)"
             />
             <FormControlLabel
               control={
@@ -290,7 +290,7 @@ const FilterPanel: React.FC<Props> = ({
                   onChange={() => handleCheckboxChange('showHighConfidence')}
                 />
               }
-              label="Высокая уверенность (>0,8)"
+              label="Высокое значение выхода (≥ 0,8)"
             />
             <FormControlLabel
               control={
@@ -299,7 +299,7 @@ const FilterPanel: React.FC<Props> = ({
                   onChange={() => handleCheckboxChange('showLowConfidence')}
                 />
               }
-              label="Низкая уверенность (<0,5)"
+              label="Низкое значение выхода (≤ 0,5)"
             />
           </Box>
         </Grid>
