@@ -202,7 +202,10 @@ def apply_filters(
     shap_range: Optional[tuple] = None,
     prediction_range: Optional[tuple] = None,
     sample_ids: Optional[List[int]] = None,
-    feature_value_filters: Optional[Dict[str, tuple]] = None
+    feature_value_filters: Optional[Dict[str, tuple]] = None,
+    outliers_only: bool = False,
+    high_output_only: bool = False,
+    low_output_only: bool = False,
 ) -> Dict[str, Any]:
     """
     Apply filters to SHAP interactive data
@@ -214,6 +217,10 @@ def apply_filters(
         prediction_range: Tuple (min, max) for prediction range
         sample_ids: List of specific sample IDs to include
         feature_value_filters: Dict of feature_name -> (min, max) for feature values
+        outliers_only: Include points with an absolute SHAP value at or above
+            the global 95th percentile
+        high_output_only: Include points with model output at or above 0.8
+        low_output_only: Include points with model output at or below 0.5
 
     Returns:
         Filtered data
@@ -261,13 +268,48 @@ def apply_filters(
                 min_val <= p['features'][feature_name]['value'] <= max_val
             ]
 
-    # Recalculate summary stats for filtered data
+    if outliers_only:
+        maximum_impacts = [
+            max(
+                feature_data['abs_shap']
+                for feature_data in point['features'].values()
+            )
+            for point in data['points']
+            if point['features']
+        ]
+        outlier_threshold = (
+            float(np.percentile(maximum_impacts, 95))
+            if maximum_impacts
+            else float('inf')
+        )
+        filtered_points = [
+            point for point in filtered_points
+            if any(
+                feature_data['abs_shap'] >= outlier_threshold
+                for feature_data in point['features'].values()
+            )
+        ]
+
+    if high_output_only:
+        filtered_points = [
+            point for point in filtered_points
+            if point['prediction'] >= 0.8
+        ]
+
+    if low_output_only:
+        filtered_points = [
+            point for point in filtered_points
+            if point['prediction'] <= 0.5
+        ]
+
+    feature_names = data['feature_names']
     if filtered_points:
         predictions = [p['prediction'] for p in filtered_points]
-        all_shap_values = []
-        for p in filtered_points:
-            for feat_data in p['features'].values():
-                all_shap_values.append(feat_data['shap_value'])
+        all_shap_values = [
+            point['features'][feature_name]['shap_value']
+            for point in filtered_points
+            for feature_name in feature_names
+        ]
 
         summary_stats = {
             'prediction_mean': float(np.mean(predictions)),
@@ -279,12 +321,49 @@ def apply_filters(
                 'max': float(np.max(all_shap_values)) if all_shap_values else 0
             }
         }
+        feature_importance = {}
+        for feature_name in feature_names:
+            feature_shap = np.array([
+                point['features'][feature_name]['shap_value']
+                for point in filtered_points
+            ])
+            feature_importance[feature_name] = {
+                'mean_abs_shap': float(np.mean(np.abs(feature_shap))),
+                'max_abs_shap': float(np.max(np.abs(feature_shap))),
+                'min_shap': float(np.min(feature_shap)),
+                'max_shap': float(np.max(feature_shap)),
+                'variance': float(np.var(feature_shap)),
+                'std': float(np.std(feature_shap)),
+                'median_abs_shap': float(np.median(np.abs(feature_shap)))
+            }
     else:
-        summary_stats = data['summary_stats']
+        summary_stats = {
+            'prediction_mean': 0.0,
+            'prediction_std': 0.0,
+            'prediction_min': 0.0,
+            'prediction_max': 0.0,
+            'shap_range': {
+                'min': 0.0,
+                'max': 0.0
+            }
+        }
+        feature_importance = {
+            feature_name: {
+                'mean_abs_shap': 0.0,
+                'max_abs_shap': 0.0,
+                'min_shap': 0.0,
+                'max_shap': 0.0,
+                'variance': 0.0,
+                'std': 0.0,
+                'median_abs_shap': 0.0
+            }
+            for feature_name in feature_names
+        }
 
     return {
         **data,
         'points': filtered_points,
+        'feature_importance': feature_importance,
         'n_samples': len(filtered_points),
         'summary_stats': summary_stats,
         'filters_applied': {
@@ -292,7 +371,10 @@ def apply_filters(
             'shap_range': shap_range,
             'prediction_range': prediction_range,
             'sample_ids': sample_ids,
-            'feature_value_filters': feature_value_filters
+            'feature_value_filters': feature_value_filters,
+            'outliers_only': outliers_only,
+            'high_output_only': high_output_only,
+            'low_output_only': low_output_only,
         }
     }
 

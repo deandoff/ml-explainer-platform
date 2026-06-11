@@ -58,12 +58,10 @@ const LimeResultsPage: React.FC = () => {
 
         const initialValues: any = {};
         Object.keys(firstInstance.explanation.feature_importance).forEach(feature => {
-          initialValues[feature] = 0;
+          initialValues[feature] = 50;
         });
         setWhatIfValues(initialValues);
       }
-    };
-
       setLoading(false);
     } catch (error) {
       console.error('Failed to load results:', error);
@@ -334,7 +332,7 @@ const LimeResultsPage: React.FC = () => {
                   Структура предсказания
                 </Typography>
                 <Typography variant="body2" color="text.secondary" paragraph>
-                  Как модель пришла к итоговому предсказанию
+                  Как локальная линейная модель LIME приближает предсказание
                 </Typography>
 
                 <Box sx={{ mt: 3 }}>
@@ -629,15 +627,15 @@ const LimeResultsPage: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Section 7: What-If Analysis - INTERACTIVE */}
+        {/* Section 7: LIME surrogate sensitivity illustration */}
         <Card sx={{ mb: 3, borderTop: '3px solid #9c27b0' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom fontWeight="bold">
-              Анализ «что, если»
+              Условная чувствительность локальной модели LIME
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
-              Изменяйте самые влиятельные признаки и наблюдайте, как они воздействуют на предсказание модели.
-              Это помогает оценить чувствительность модели и границы принятия решений.
+              Ползунки условно масштабируют найденные LIME-вклады. Это иллюстрация
+              локальной линейной аппроксимации, а не повторный расчет исходной модели.
             </Typography>
 
             <Grid container spacing={3}>
@@ -664,7 +662,7 @@ const LimeResultsPage: React.FC = () => {
                   </Box>
 
                   {sortedFeatures.slice(0, 5).map(([feature, contribution]) => {
-                    const currentValue = whatIfValues[feature] || 50;
+                    const currentValue = whatIfValues[feature] ?? 50;
                     const isPositive = (contribution as number) > 0;
                     const sensitivity = Math.abs(contribution as number) > 0.1 ? 'Высокое' :
                                        Math.abs(contribution as number) > 0.05 ? 'Среднее' : 'Низкое';
@@ -755,42 +753,38 @@ const LimeResultsPage: React.FC = () => {
               <Grid item xs={12} md={5}>
                 <Paper sx={{ p: 3, bgcolor: '#f3e5f5', position: 'sticky', top: 20 }}>
                   <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                    Предсказание в реальном времени
+                    Условная оценка LIME
                   </Typography>
 
                   {(() => {
-                    // Calculate simulated prediction change based on slider movements
                     let predictionDelta = 0;
                     sortedFeatures.slice(0, 5).forEach(([feature, contribution]) => {
-                      const currentSliderValue = whatIfValues[feature] || 50;
-                      const deviation = (currentSliderValue - 50) / 50; // -1 to +1
-                      predictionDelta += (contribution as number) * deviation * 0.5; // Scale factor
+                      const currentSliderValue = whatIfValues[feature] ?? 50;
+                      const contributionScaleDelta = (currentSliderValue - 50) / 50;
+                      predictionDelta += (contribution as number) * contributionScaleDelta;
                     });
 
-                    const newProbability = Math.max(0, Math.min(1, confidence + predictionDelta));
-                    const probabilityChange = newProbability - confidence;
-                    const newPredictedClass = predictionProba.length === 2 && newProbability < 0.5
-                      ? (predictedClass === 0 ? 1 : 0)
-                      : predictedClass;
-                    const classChanged = newPredictedClass !== predictedClass;
+                    const newProbability = Math.max(0, Math.min(1, localPrediction + predictionDelta));
+                    const probabilityChange = newProbability - localPrediction;
+                    const isAboveDecisionThreshold = newProbability >= 0.5;
 
                     return (
                       <>
                         <Box sx={{ mb: 3, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Новое предсказание
+                            Оценка локальной модели для класса {predictedClass}
                           </Typography>
                           <Typography variant="h3" color="primary" fontWeight="bold">
                             {(newProbability * 100).toFixed(1)}%
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            Класс {newPredictedClass}
+                            Объясняемый класс {predictedClass}
                           </Typography>
                         </Box>
 
                         <Box sx={{ mb: 3, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Изменение относительно исходного
+                            Изменение относительно исходной аппроксимации
                           </Typography>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             {probabilityChange > 0 ? (
@@ -810,18 +804,13 @@ const LimeResultsPage: React.FC = () => {
 
                         <Box sx={{ mb: 3, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Класс изменился?
+                            Локальная оценка выше 50%?
                           </Typography>
                           <Chip
-                            label={classChanged ? 'Да' : 'Нет'}
-                            color={classChanged ? 'warning' : 'success'}
+                            label={isAboveDecisionThreshold ? 'Да' : 'Нет'}
+                            color={isAboveDecisionThreshold ? 'success' : 'warning'}
                             sx={{ fontWeight: 'bold', fontSize: '1rem' }}
                           />
-                          {classChanged && (
-                            <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
-                              Предсказанный класс изменился с {predictedClass} на {newPredictedClass}
-                            </Typography>
-                          )}
                         </Box>
 
                         <Divider sx={{ my: 2 }} />
@@ -831,10 +820,10 @@ const LimeResultsPage: React.FC = () => {
                             Сравнение
                           </Typography>
                           <Box sx={{ mb: 2 }}>
-                            <Typography variant="caption" color="text.secondary">Исходное</Typography>
+                            <Typography variant="caption" color="text.secondary">Исходная аппроксимация LIME</Typography>
                             <LinearProgress
                               variant="determinate"
-                              value={confidence * 100}
+                              value={localPrediction * 100}
                               sx={{
                                 height: 12,
                                 borderRadius: 1,
@@ -842,7 +831,7 @@ const LimeResultsPage: React.FC = () => {
                                 '& .MuiLinearProgress-bar': { bgcolor: '#1976d2' }
                               }}
                             />
-                            <Typography variant="caption">{(confidence * 100).toFixed(1)}%</Typography>
+                            <Typography variant="caption">{(localPrediction * 100).toFixed(1)}%</Typography>
                           </Box>
                           <Box>
                             <Typography variant="caption" color="text.secondary">Измененное</Typography>
@@ -864,8 +853,9 @@ const LimeResultsPage: React.FC = () => {
 
                         <Alert severity="info" sx={{ mt: 2 }}>
                           <Typography variant="caption">
-                            Это упрощенная симуляция. Реальное поведение модели может отличаться.
-                            Перемещайте ползунки, чтобы изучить влияние признаков на предсказание.
+                            Здесь пересчитывается только линейная аппроксимация LIME.
+                            Исходная модель не запускается, поэтому этот блок нельзя
+                            интерпретировать как настоящее новое предсказание.
                           </Typography>
                         </Alert>
                       </>

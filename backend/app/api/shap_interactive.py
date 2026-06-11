@@ -24,6 +24,9 @@ async def get_shap_interactive_data(
     prediction_range_max: Optional[float] = Query(None, description="Maximum prediction"),
     sample_ids: Optional[str] = Query(None, description="Comma-separated sample IDs"),
     feature_value_filters: Optional[str] = Query(None, description="JSON object of feature_name -> [min, max]"),
+    outliers_only: bool = Query(False, description="Only points above the 95th percentile of absolute SHAP values"),
+    high_output_only: bool = Query(False, description="Only points with model output at or above 0.8"),
+    low_output_only: bool = Query(False, description="Only points with model output at or below 0.5"),
     current_user_id: UUID = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
@@ -107,7 +110,10 @@ async def get_shap_interactive_data(
         shap_range=shap_range,
         prediction_range=prediction_range,
         sample_ids=sample_id_list,
-        feature_value_filters=feature_value_filter_dict
+        feature_value_filters=feature_value_filter_dict,
+        outliers_only=outliers_only,
+        high_output_only=high_output_only,
+        low_output_only=low_output_only,
     )
 
     return filtered_data
