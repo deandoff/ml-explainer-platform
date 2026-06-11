@@ -45,6 +45,7 @@ class Model(Base):
     description = Column(Text)
     model_type = Column(Enum(ModelType), nullable=False)
     s3_key = Column(String, nullable=False)  # Path in storage
+    original_filename = Column(String)
     file_size = Column(BigInteger)  # bytes
     model_metadata = Column(JSON)  # Additional info (library version, params, etc.)
     status = Column(Enum(ModelStatus), default=ModelStatus.UPLOADED)
@@ -64,6 +65,7 @@ class Dataset(Base):
     name = Column(String, nullable=False)
     description = Column(Text)
     s3_key = Column(String, nullable=False)
+    original_filename = Column(String)
     file_size = Column(BigInteger)
     num_rows = Column(Integer)
     num_columns = Column(Integer)

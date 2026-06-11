@@ -81,6 +81,7 @@ const ModelsPage: React.FC = () => {
         description: modelDescription,
         model_type: modelType,
         s3_key: s3_key,
+        original_filename: uploadFile.name,
       });
 
       alert('Модель успешно загружена');
@@ -96,7 +97,9 @@ const ModelsPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Удалить эту модель?')) {
+    if (!window.confirm(
+      'Удалить эту модель? Вместе с ней будут удалены все связанные анализы.'
+    )) {
       return;
     }
 

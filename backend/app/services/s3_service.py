@@ -2,6 +2,7 @@ import boto3
 from botocore.client import Config
 from app.core.config import settings
 from typing import Optional
+from urllib.parse import quote
 import uuid
 
 
@@ -50,15 +51,27 @@ class S3Service:
     def generate_presigned_download_url(
         self,
         s3_key: str,
-        expires_in: int = 3600
+        expires_in: int = 3600,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
     ) -> str:
         """Generate presigned URL for downloading from S3"""
+        params = {
+            'Bucket': self.bucket_name,
+            'Key': s3_key,
+        }
+        if filename:
+            encoded_filename = quote(filename)
+            params['ResponseContentDisposition'] = (
+                "attachment; filename=\"download\"; "
+                f"filename*=UTF-8''{encoded_filename}"
+            )
+        if content_type:
+            params['ResponseContentType'] = content_type
+
         presigned_url = self.s3_client.generate_presigned_url(
             'get_object',
-            Params={
-                'Bucket': self.bucket_name,
-                'Key': s3_key
-            },
+            Params=params,
             ExpiresIn=expires_in
         )
         return presigned_url

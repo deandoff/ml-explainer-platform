@@ -182,7 +182,12 @@ def generate_lime_bar_chart(feature_importance: Dict[str, float]) -> Dict[str, A
     return json.loads(fig.to_json())
 
 
-def generate_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, class_names: List[str] = None) -> Dict[str, Any]:
+def generate_confusion_matrix(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: List[str] = None,
+    class_values: List[Any] = None,
+) -> Dict[str, Any]:
     """
     Generate confusion matrix heatmap
 
@@ -190,19 +195,27 @@ def generate_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, class_name
         y_true: True labels
         y_pred: Predicted labels
         class_names: Optional class names
+        class_values: Values used by the model for each class
 
     Returns:
         Plotly figure as dict
     """
     from sklearn.metrics import confusion_matrix
 
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=class_values)
 
     if class_names is None:
-        class_names = [f'Class {i}' for i in range(len(cm))]
+        names_source = class_values if class_values is not None else range(len(cm))
+        class_names = [f'Класс {value}' for value in names_source]
 
     # Calculate percentages
-    cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+    row_totals = cm.sum(axis=1, keepdims=True)
+    cm_percent = np.divide(
+        cm.astype(float),
+        row_totals,
+        out=np.zeros_like(cm, dtype=float),
+        where=row_totals != 0,
+    ) * 100
 
     # Create annotations
     annotations = []

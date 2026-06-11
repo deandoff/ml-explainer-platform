@@ -7,6 +7,11 @@ from app.core.auth import get_current_user_id
 from app.models.models import Model as ModelDB, ModelStatus
 from app.schemas.schemas import ModelCreate, ModelResponse, PresignedUrlResponse
 from app.services.storage import storage_service
+from app.services.file_names import model_download_filename, sanitize_filename
+from app.services.resource_cleanup import (
+    delete_related_analyses,
+    delete_storage_files,
+)
 from app.core.config import settings
 from starlette.concurrency import run_in_threadpool
 import os
@@ -94,6 +99,7 @@ async def create_model(
             description=model.description,
             model_type=model.model_type,
             s3_key=s3_key,
+            original_filename=sanitize_filename(model.original_filename),
             file_size=file_size,
             status=ModelStatus.UPLOADED
         )
@@ -156,23 +162,18 @@ async def delete_model(
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    # Check if model is used in analyses
-    analyses_count = db.query(Analysis).filter(Analysis.model_id == model_id).count()
-    if analyses_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete model: it is used in {analyses_count} analysis/analyses"
-        )
-
     try:
-        # Delete from storage
-        storage_service.delete_file(model.s3_key)
-
-        # Delete from database
+        analyses = db.query(Analysis).filter(Analysis.model_id == model_id).all()
+        storage_keys = delete_related_analyses(db, analyses)
+        storage_keys.append(model.s3_key)
         db.delete(model)
         db.commit()
 
-        return {"message": "Model deleted successfully"}
+        delete_storage_files(storage_keys)
+        return {
+            "message": "Модель удалена",
+            "deleted_analyses": len(analyses),
+        }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
@@ -193,7 +194,17 @@ async def download_model(
         raise HTTPException(status_code=404, detail="Model not found")
 
     try:
-        download_url = storage_service.generate_presigned_download_url(model.s3_key)
+        model_type = getattr(model.model_type, "value", str(model.model_type))
+        filename = model_download_filename(
+            model.name,
+            model_type,
+            model.original_filename,
+        )
+        download_url = storage_service.generate_presigned_download_url(
+            model.s3_key,
+            filename=filename,
+            content_type="application/octet-stream",
+        )
 
         # For local storage, return API endpoint instead of file path
         if settings.STORAGE_MODE == "local":
@@ -201,7 +212,7 @@ async def download_model(
 
         return {
             "download_url": download_url,
-            "filename": model.name,
+            "filename": filename,
             "file_size": model.file_size
         }
     except Exception as e:
@@ -230,10 +241,18 @@ async def download_file_direct(
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
 
+        model_type = getattr(model.model_type, "value", str(model.model_type))
+        filename = model_download_filename(
+            model.name,
+            model_type,
+            model.original_filename,
+        )
         return FileResponse(
             path=file_path,
-            filename=model.name,
+            filename=filename,
             media_type='application/octet-stream'
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")

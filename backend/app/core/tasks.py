@@ -18,12 +18,16 @@ from app.core.shap_interactive import (
 )
 from app.core.analysis_utils import (
     classification_outputs,
+    explained_output_label,
+    resolve_class_metadata,
     select_base_value,
     select_prediction_output,
     select_shap_output,
     split_features_and_target,
 )
 from app.services.storage import storage_service
+from app.core.database import SessionLocal
+from app.models.models import Analysis, AnalysisStatus
 import pandas as pd
 import numpy as np
 import shap
@@ -31,9 +35,33 @@ import tempfile
 import os
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+def update_analysis_record(
+    analysis_id: str,
+    status: AnalysisStatus,
+    result_s3_key: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    database = SessionLocal()
+    try:
+        analysis = database.query(Analysis).filter(Analysis.id == analysis_id).first()
+        if not analysis:
+            return
+
+        analysis.status = status
+        analysis.result_s3_key = result_s3_key
+        analysis.error_message = error_message
+        if status in {AnalysisStatus.COMPLETED, AnalysisStatus.FAILED}:
+            analysis.completed_at = datetime.utcnow()
+        database.commit()
+    finally:
+        database.close()
+
 
 @celery_app.task(bind=True, name="app.core.tasks.run_shap_analysis")
 def run_shap_analysis(
@@ -42,7 +70,8 @@ def run_shap_analysis(
     dataset_s3_key: str,
     model_type: str,
     analysis_id: str,
-    user_id: str = None
+    user_id: str = None,
+    class_labels: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Run SHAP analysis on model and dataset
@@ -75,6 +104,15 @@ def run_shap_analysis(
         features, y_true = split_features_and_target(data)
         model_predictions = ModelLoader.predict(model, features, model_type)
         _, output_index = select_prediction_output(model_predictions)
+        class_values, resolved_class_labels = resolve_class_metadata(
+            model,
+            model_predictions,
+            class_labels,
+        )
+        output_label = explained_output_label(
+            resolved_class_labels,
+            output_index,
+        )
 
         self.update_state(state='PROGRESS', meta={'status': 'Initializing SHAP explainer'})
 
@@ -183,10 +221,15 @@ def run_shap_analysis(
         )
 
         if y_true is not None:
-            y_pred_class, y_pred_proba = classification_outputs(model_predictions)
+            y_pred_class, y_pred_proba = classification_outputs(
+                model_predictions,
+                class_values,
+            )
             visualizations['confusion_matrix'] = generate_confusion_matrix(
                 y_true=y_true,
                 y_pred=y_pred_class,
+                class_names=resolved_class_labels,
+                class_values=class_values,
             )
             visualizations['metrics'] = generate_metrics_cards(
                 y_true=y_true,
@@ -203,6 +246,9 @@ def run_shap_analysis(
             'num_features': len(features.columns),
             'target_column': 'target' if y_true is not None else None,
             'explained_output': output_index,
+            'explained_output_label': output_label,
+            'class_values': class_values,
+            'class_labels': resolved_class_labels,
         }
 
         if user_id:
@@ -216,13 +262,26 @@ def run_shap_analysis(
             storage_service.upload_file(result_file.name, result_s3_key)
             os.unlink(result_file.name)
 
+        update_analysis_record(
+            analysis_id,
+            AnalysisStatus.COMPLETED,
+            result_s3_key=result_s3_key,
+        )
         return {
             'status': 'completed',
             'result_s3_key': result_s3_key,
             'results': results
         }
 
-    except Exception:
+    except Exception as exc:
+        try:
+            update_analysis_record(
+                analysis_id,
+                AnalysisStatus.FAILED,
+                error_message=str(exc),
+            )
+        except Exception:
+            logger.exception("Failed to persist SHAP failure status for %s", analysis_id)
         logger.exception("SHAP analysis %s failed", analysis_id)
         raise
 
@@ -233,7 +292,8 @@ def run_lime_analysis(
     dataset_s3_key: str,
     model_type: str,
     analysis_id: str,
-    user_id: str = None
+    user_id: str = None,
+    class_labels: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Run LIME analysis on model and dataset
@@ -265,6 +325,11 @@ def run_lime_analysis(
 
         features, y_true = split_features_and_target(data)
         model_predictions = ModelLoader.predict(model, features, model_type)
+        class_values, resolved_class_labels = resolve_class_metadata(
+            model,
+            model_predictions,
+            class_labels,
+        )
 
         self.update_state(state='PROGRESS', meta={'status': 'Initializing LIME explainer'})
 
@@ -294,10 +359,15 @@ def run_lime_analysis(
             )
 
         if y_true is not None:
-            y_pred_class, y_pred_proba = classification_outputs(model_predictions)
+            y_pred_class, y_pred_proba = classification_outputs(
+                model_predictions,
+                class_values,
+            )
             visualizations['confusion_matrix'] = generate_confusion_matrix(
                 y_true=y_true,
                 y_pred=y_pred_class,
+                class_names=resolved_class_labels,
+                class_values=class_values,
             )
             visualizations['metrics'] = generate_metrics_cards(
                 y_true=y_true,
@@ -312,6 +382,8 @@ def run_lime_analysis(
             'num_samples': len(data),
             'num_features': len(features.columns),
             'target_column': 'target' if y_true is not None else None,
+            'class_values': class_values,
+            'class_labels': resolved_class_labels,
         }
 
         if user_id:
@@ -325,12 +397,25 @@ def run_lime_analysis(
             storage_service.upload_file(result_file.name, result_s3_key)
             os.unlink(result_file.name)
 
+        update_analysis_record(
+            analysis_id,
+            AnalysisStatus.COMPLETED,
+            result_s3_key=result_s3_key,
+        )
         return {
             'status': 'completed',
             'result_s3_key': result_s3_key,
             'results': results
         }
 
-    except Exception:
+    except Exception as exc:
+        try:
+            update_analysis_record(
+                analysis_id,
+                AnalysisStatus.FAILED,
+                error_message=str(exc),
+            )
+        except Exception:
+            logger.exception("Failed to persist LIME failure status for %s", analysis_id)
         logger.exception("LIME analysis %s failed", analysis_id)
         raise

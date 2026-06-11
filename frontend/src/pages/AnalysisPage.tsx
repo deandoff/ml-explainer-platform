@@ -23,6 +23,7 @@ import {
   Chip,
   IconButton,
   TablePagination,
+  TextField,
 } from '@mui/material';
 import type { ChipProps } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -61,9 +62,8 @@ const AnalysisPage: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string | ''>('');
   const [selectedDataset, setSelectedDataset] = useState<string | ''>('');
   const [explainerType, setExplainerType] = useState<'shap' | 'lime'>('shap');
-  const [loading, setLoading] = useState(false);
-  const [analysisId, setAnalysisId] = useState<string | null>(null);
-  const [analysisStatus, setAnalysisStatus] = useState<string>('');
+  const [classLabelsInput, setClassLabelsInput] = useState('');
+  const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(20);
@@ -99,38 +99,6 @@ const AnalysisPage: React.FC = () => {
     }
   }, []);
 
-  const loadResults = useCallback(async () => {
-    if (!analysisId) return;
-
-    try {
-      await analysesAPI.getAnalysisResults(analysisId);
-      navigate(`/analysis/${analysisId}/results`);
-      loadAnalyses();
-    } catch (error) {
-      console.error('Failed to load results:', error);
-      setLoading(false);
-    }
-  }, [analysisId, loadAnalyses, navigate]);
-
-  const checkAnalysisStatus = useCallback(async () => {
-    if (!analysisId) return;
-
-    try {
-      const response = await analysesAPI.getAnalysisStatus(analysisId);
-      const status = response.data.status;
-      setAnalysisStatus(status);
-
-      if (status === 'completed') {
-        loadResults();
-      } else if (status === 'failed') {
-        alert('Не удалось выполнить анализ');
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error('Failed to check status:', error);
-    }
-  }, [analysisId, loadResults]);
-
   useEffect(() => {
     loadModels();
     loadDatasets();
@@ -138,11 +106,14 @@ const AnalysisPage: React.FC = () => {
   }, [loadAnalyses, loadDatasets, loadModels]);
 
   useEffect(() => {
-    if (analysisId && analysisStatus === 'running') {
-      const interval = setInterval(checkAnalysisStatus, 3000);
+    const hasActiveAnalyses = analyses.some(
+      analysis => analysis.status === 'pending' || analysis.status === 'running'
+    );
+    if (hasActiveAnalyses) {
+      const interval = setInterval(loadAnalyses, 3000);
       return () => clearInterval(interval);
     }
-  }, [analysisId, analysisStatus, checkAnalysisStatus]);
+  }, [analyses, loadAnalyses]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -159,23 +130,27 @@ const AnalysisPage: React.FC = () => {
       return;
     }
 
-    setLoading(true);
+    setStartingAnalysis(true);
     setResults(null);
 
     try {
-      const response = await analysesAPI.createAnalysis({
+      const classLabels = classLabelsInput
+        .split(',')
+        .map(label => label.trim())
+        .filter(Boolean);
+      await analysesAPI.createAnalysis({
         model_id: selectedModel,
         dataset_id: selectedDataset,
         explainer_type: explainerType,
+        class_labels: classLabels.length > 0 ? classLabels : undefined,
       });
 
-      setAnalysisId(response.data.id);
-      setAnalysisStatus('running');
-      loadAnalyses(); // Refresh list
+      await loadAnalyses();
     } catch (error) {
       console.error('Failed to start analysis:', error);
       alert('Не удалось запустить анализ');
-      setLoading(false);
+    } finally {
+      setStartingAnalysis(false);
     }
   };
 
@@ -554,24 +529,38 @@ const AnalysisPage: React.FC = () => {
               </Select>
             </FormControl>
 
+            <TextField
+              fullWidth
+              label="Названия классов"
+              value={classLabelsInput}
+              onChange={(event) => setClassLabelsInput(event.target.value)}
+              placeholder="Кредит отклонён, Кредит одобрен"
+              helperText="Необязательно. Укажите названия через запятую в порядке выходов модели."
+            />
+
             <Button
               variant="contained"
               startIcon={<PlayArrowIcon />}
               onClick={startAnalysis}
-              disabled={loading || !selectedModel || !selectedDataset}
+              disabled={startingAnalysis || !selectedModel || !selectedDataset}
             >
-              Запустить анализ
+              {startingAnalysis ? 'Запуск...' : 'Запустить анализ'}
             </Button>
           </Box>
         </Paper>
 
-        {loading && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-            <CircularProgress />
-            <Typography>
-              Анализ выполняется. Статус: {formatStatus(analysisStatus)}
-            </Typography>
-          </Box>
+        {analyses.some(
+          analysis => analysis.status === 'pending' || analysis.status === 'running'
+        ) && (
+          <Alert
+            severity="info"
+            icon={<CircularProgress size={20} />}
+            sx={{ mb: 3 }}
+          >
+            Выполняется анализов: {analyses.filter(
+              analysis => analysis.status === 'pending' || analysis.status === 'running'
+            ).length}. Можно запустить ещё один анализ или открыть готовые результаты.
+          </Alert>
         )}
 
         {results && (
