@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box,
   Paper,
@@ -9,16 +9,13 @@ import {
   FormControl,
   InputLabel,
   Grid,
-  CircularProgress,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
-import { shapInteractiveAPI } from '../../api';
 import { russianPlotlyConfig } from '../../utils/plotlyConfig';
 
 interface Props {
-  analysisId: string;
   featureName: string;
   shapData: any;
   onClose: () => void;
@@ -27,41 +24,53 @@ interface Props {
 }
 
 const InlineDependencePlot: React.FC<Props> = ({
-  analysisId,
   featureName,
   shapData,
   onClose,
   onPointClick,
   selectedSamples = []
 }) => {
-  const [loading, setLoading] = useState(false);
-  const [interactionFeature, setInteractionFeature] = useState<string>('auto');
-  const [featureStats, setFeatureStats] = useState<any>(null);
+  const [interactionFeature, setInteractionFeature] = useState<string>('none');
 
-  useEffect(() => {
-    let isActive = true;
+  const featureStats = useMemo(() => {
+    const values = (shapData?.points || [])
+      .map((point: any) => point.features[featureName])
+      .filter(Boolean);
 
-    const loadFeatureStats = async () => {
-      setLoading(true);
-      try {
-        const response = await shapInteractiveAPI.getFeatureStats(analysisId, featureName);
-        if (isActive) {
-          setFeatureStats(response.data);
-        }
-      } catch (error) {
-        console.error('Failed to load feature stats:', error);
-      } finally {
-        if (isActive) {
-          setLoading(false);
-        }
-      }
+    if (values.length === 0) return null;
+
+    const featureValues = values.map((value: any) => Number(value.value));
+    const shapValues = values.map((value: any) => Number(value.shap_value));
+    const featureMean = featureValues.reduce((sum: number, value: number) => sum + value, 0)
+      / featureValues.length;
+    const shapMean = shapValues.reduce((sum: number, value: number) => sum + value, 0)
+      / shapValues.length;
+    const covariance = featureValues.reduce(
+      (sum: number, value: number, index: number) =>
+        sum + (value - featureMean) * (shapValues[index] - shapMean),
+      0
+    );
+    const featureVariance = featureValues.reduce(
+      (sum: number, value: number) => sum + (value - featureMean) ** 2,
+      0
+    );
+    const shapVariance = shapValues.reduce(
+      (sum: number, value: number) => sum + (value - shapMean) ** 2,
+      0
+    );
+    const denominator = Math.sqrt(featureVariance * shapVariance);
+
+    return {
+      correlation: denominator > 0 ? covariance / denominator : 0,
+      meanAbsShap: shapValues.reduce(
+        (sum: number, value: number) => sum + Math.abs(value),
+        0
+      ) / shapValues.length,
+      maxImpact: Math.max(...shapValues.map((value: number) => Math.abs(value))),
+      positiveImpactRatio: shapValues.filter((value: number) => value > 0).length
+        / shapValues.length,
     };
-
-    loadFeatureStats();
-    return () => {
-      isActive = false;
-    };
-  }, [analysisId, featureName]);
+  }, [featureName, shapData]);
 
   // Prepare dependence plot data
   const plotData = React.useMemo<Data[]>(() => {
@@ -72,13 +81,10 @@ const InlineDependencePlot: React.FC<Props> = ({
       if (!featureData) return null;
 
       // Determine interaction feature color
-      let colorValue = 0;
-      if (interactionFeature !== 'auto' && interactionFeature !== 'none') {
+      let colorValue: number | null = null;
+      if (interactionFeature !== 'none') {
         const interactionData = p.features[interactionFeature];
-        colorValue = interactionData ? interactionData.value : 0;
-      } else {
-        // Auto: use feature value itself
-        colorValue = featureData.value;
+        colorValue = interactionData ? interactionData.value : null;
       }
 
       return {
@@ -95,17 +101,17 @@ const InlineDependencePlot: React.FC<Props> = ({
       mode: 'markers',
       x: points.map((p: any) => p.x),
       y: points.map((p: any) => p.y),
-      customdata: points.map((p: any) => [p.sampleId, p.prediction]),
+      customdata: points.map((p: any) => [p.sampleId, p.prediction, p.colorValue]),
       marker: {
         size: 8,
-        color: points.map((p: any) => p.colorValue),
+        color: interactionFeature === 'none'
+          ? '#1976d2'
+          : points.map((p: any) => p.colorValue),
         colorscale: 'Viridis',
-        showscale: true,
-        colorbar: {
+        showscale: interactionFeature !== 'none',
+        colorbar: interactionFeature === 'none' ? undefined : {
           title: {
-            text: interactionFeature === 'auto' || interactionFeature === 'none'
-              ? featureName
-              : interactionFeature,
+            text: interactionFeature,
             side: 'right'
           },
           x: 1.02,
@@ -126,6 +132,9 @@ const InlineDependencePlot: React.FC<Props> = ({
         `<b>${featureName}</b><br>` +
         'Значение признака: %{x:.4f}<br>' +
         'Значение SHAP: %{y:.4f}<br>' +
+        (interactionFeature === 'none'
+          ? ''
+          : `${interactionFeature}: %{customdata[2]:.4f}<br>`) +
         'Предсказание: %{customdata[1]:.4f}<br>' +
         'Идентификатор объекта: %{customdata[0]}<br>' +
         '<extra></extra>'
@@ -189,17 +198,15 @@ const InlineDependencePlot: React.FC<Props> = ({
       {/* Controls */}
       <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Признак взаимодействия</InputLabel>
+          <InputLabel>Цвет точек</InputLabel>
           <Select
             value={interactionFeature}
-            label="Признак взаимодействия"
+            label="Цвет точек"
             onChange={(e) => setInteractionFeature(e.target.value)}
           >
-            <MenuItem value="auto">Определить автоматически</MenuItem>
-            <MenuItem value="none">Без взаимодействия</MenuItem>
+            <MenuItem value="none">Один цвет</MenuItem>
             {availableFeatures
               .filter((f: string) => f !== featureName)
-              .slice(0, 10)
               .map((f: string) => (
                 <MenuItem key={f} value={f}>{f}</MenuItem>
               ))}
@@ -207,30 +214,24 @@ const InlineDependencePlot: React.FC<Props> = ({
         </FormControl>
 
         <Typography variant="caption" color="text.secondary">
-          Цвет показывает взаимодействие с выбранным признаком
+          Цвет кодирует значение дополнительного признака и помогает заметить возможное взаимодействие
         </Typography>
       </Box>
 
       {/* Plot */}
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <Plot
-          data={plotData}
-          layout={layout}
-          config={{
-            ...russianPlotlyConfig,
-            responsive: true,
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['lasso2d', 'select2d']
-          }}
-          onClick={handlePlotClick}
-          style={{ width: '100%' }}
-        />
-      )}
+      <Plot
+        data={plotData}
+        layout={layout}
+        config={{
+          ...russianPlotlyConfig,
+          responsive: true,
+          displayModeBar: true,
+          displaylogo: false,
+          modeBarButtonsToRemove: ['lasso2d', 'select2d']
+        }}
+        onClick={handlePlotClick}
+        style={{ width: '100%' }}
+      />
 
       {/* Statistics */}
       {featureStats && (
@@ -241,11 +242,11 @@ const InlineDependencePlot: React.FC<Props> = ({
                 Корреляция
               </Typography>
               <Typography variant="h6" color={
-                Math.abs(featureStats.statistics.correlation) > 0.7 ? 'error.main' :
-                Math.abs(featureStats.statistics.correlation) > 0.4 ? 'warning.main' :
+                Math.abs(featureStats.correlation) > 0.7 ? 'error.main' :
+                Math.abs(featureStats.correlation) > 0.4 ? 'warning.main' :
                 'success.main'
               }>
-                {featureStats.statistics.correlation.toFixed(3)}
+                {featureStats.correlation.toFixed(3)}
               </Typography>
             </Paper>
           </Grid>
@@ -256,7 +257,7 @@ const InlineDependencePlot: React.FC<Props> = ({
                 Среднее |SHAP|
               </Typography>
               <Typography variant="h6">
-                {featureStats.statistics.mean_abs_shap.toFixed(4)}
+                {featureStats.meanAbsShap.toFixed(4)}
               </Typography>
             </Paper>
           </Grid>
@@ -267,7 +268,7 @@ const InlineDependencePlot: React.FC<Props> = ({
                 Максимальное влияние
               </Typography>
               <Typography variant="h6">
-                {featureStats.statistics.max_impact.toFixed(4)}
+                {featureStats.maxImpact.toFixed(4)}
               </Typography>
             </Paper>
           </Grid>
@@ -278,7 +279,7 @@ const InlineDependencePlot: React.FC<Props> = ({
                 Положительное влияние
               </Typography>
               <Typography variant="h6">
-                {(featureStats.statistics.positive_impact_ratio * 100).toFixed(1)}%
+                {(featureStats.positiveImpactRatio * 100).toFixed(1)}%
               </Typography>
             </Paper>
           </Grid>
@@ -291,13 +292,13 @@ const InlineDependencePlot: React.FC<Props> = ({
           Выводы
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {featureStats && Math.abs(featureStats.statistics.correlation) > 0.7 ? (
+          {featureStats && Math.abs(featureStats.correlation) > 0.7 ? (
             <>
-              <strong>Сильная {featureStats.statistics.correlation > 0 ? 'положительная' : 'отрицательная'} корреляция</strong>
+              <strong>Сильная {featureStats.correlation > 0 ? 'положительная' : 'отрицательная'} корреляция</strong>
               {' '}между значением признака и значением SHAP. Более высокие значения {featureName}, как правило,
-              {featureStats.statistics.correlation > 0 ? ' увеличивают' : ' уменьшают'} предсказание.
+              {featureStats.correlation > 0 ? ' увеличивают' : ' уменьшают'} предсказание.
             </>
-          ) : featureStats && Math.abs(featureStats.statistics.correlation) < 0.2 ? (
+          ) : featureStats && Math.abs(featureStats.correlation) < 0.2 ? (
             <>
               <strong>Слабая корреляция</strong> указывает на нелинейную зависимость или взаимодействие с другими
               признаками. Стоит проверить эффекты взаимодействия.

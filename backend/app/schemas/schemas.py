@@ -1,5 +1,5 @@
 from pydantic import BaseModel, UUID4, EmailStr
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 from enum import Enum
 
@@ -63,6 +63,7 @@ class ModelBase(BaseModel):
     name: str
     description: Optional[str] = None
     model_type: ModelType
+    original_filename: Optional[str] = None
 
 
 class ModelCreate(ModelBase):
@@ -85,6 +86,7 @@ class ModelResponse(ModelBase):
 class DatasetBase(BaseModel):
     name: str
     description: Optional[str] = None
+    original_filename: Optional[str] = None
 
 
 class DatasetCreate(DatasetBase):
@@ -109,6 +111,7 @@ class AnalysisCreate(BaseModel):
     model_id: UUID4
     dataset_id: UUID4
     explainer_type: ExplainerType
+    class_labels: Optional[List[str]] = None
 
 
 class AnalysisResponse(BaseModel):

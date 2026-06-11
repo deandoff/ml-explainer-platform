@@ -74,6 +74,7 @@ const DatasetsPage: React.FC = () => {
         name: datasetName,
         description: datasetDescription,
         s3_key: s3_key,
+        original_filename: uploadFile.name,
       });
 
       alert('Датасет успешно загружен');
@@ -89,7 +90,9 @@ const DatasetsPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Удалить этот датасет?')) {
+    if (!window.confirm(
+      'Удалить этот датасет? Вместе с ним будут удалены все связанные анализы.'
+    )) {
       return;
     }
 

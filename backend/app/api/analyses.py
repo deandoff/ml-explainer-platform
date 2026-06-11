@@ -12,6 +12,47 @@ import os
 
 router = APIRouter()
 
+
+def sync_analysis_status(analysis: AnalysisDB) -> bool:
+    if (
+        not analysis.celery_task_id
+        or analysis.status not in {AnalysisStatus.PENDING, AnalysisStatus.RUNNING}
+    ):
+        return False
+
+    task = celery_app.AsyncResult(analysis.celery_task_id)
+    if task.state == "SUCCESS":
+        result = task.result
+        if (
+            isinstance(result, dict)
+            and result.get("status") == "completed"
+            and result.get("result_s3_key")
+        ):
+            analysis.status = AnalysisStatus.COMPLETED
+            analysis.result_s3_key = result["result_s3_key"]
+        else:
+            analysis.status = AnalysisStatus.FAILED
+            analysis.error_message = (
+                result.get("error", "Analysis task returned an invalid result")
+                if isinstance(result, dict)
+                else "Analysis task returned an invalid result"
+            )
+        analysis.completed_at = datetime.utcnow()
+        return True
+
+    if task.state == "FAILURE":
+        analysis.status = AnalysisStatus.FAILED
+        analysis.error_message = str(task.info)
+        analysis.completed_at = datetime.utcnow()
+        return True
+
+    if task.state in {"STARTED", "PROGRESS"} and analysis.status != AnalysisStatus.RUNNING:
+        analysis.status = AnalysisStatus.RUNNING
+        return True
+
+    return False
+
+
 @router.post("/", response_model=AnalysisResponse)
 async def create_analysis(
     analysis: AnalysisCreate,
@@ -19,6 +60,20 @@ async def create_analysis(
     db: Session = Depends(get_db)
 ):
     """Create and start new analysis"""
+    class_labels = None
+    if analysis.class_labels:
+        class_labels = [label.strip() for label in analysis.class_labels]
+        if any(not label for label in class_labels):
+            raise HTTPException(
+                status_code=422,
+                detail="Названия классов не должны быть пустыми",
+            )
+        if len(class_labels) != len(set(class_labels)):
+            raise HTTPException(
+                status_code=422,
+                detail="Названия классов не должны повторяться",
+            )
+
     # Verify model exists and belongs to user
     model = db.query(ModelDB).filter(
         ModelDB.id == analysis.model_id,
@@ -61,6 +116,7 @@ async def create_analysis(
                 "model_type": str(model.model_type.value),
                 "analysis_id": str(db_analysis.id),
                 "user_id": str(current_user_id),
+                "class_labels": class_labels,
             },
         )
 
@@ -91,6 +147,9 @@ async def get_analysis(
     ).first()
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
+    if sync_analysis_status(analysis):
+        db.commit()
+        db.refresh(analysis)
     return analysis
 
 @router.get("/{analysis_id}/status")
@@ -107,36 +166,10 @@ async def get_analysis_status(
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
-    # Check Celery task status if running
-    if analysis.celery_task_id and analysis.status == AnalysisStatus.RUNNING:
-        from app.core.celery_app import celery_app
+    if analysis.celery_task_id:
+        sync_analysis_status(analysis)
+        db.commit()
         task = celery_app.AsyncResult(analysis.celery_task_id)
-
-        if task.state == 'SUCCESS':
-            result = task.result
-            if (
-                isinstance(result, dict)
-                and result.get('status') == 'completed'
-                and result.get('result_s3_key')
-            ):
-                analysis.status = AnalysisStatus.COMPLETED
-                analysis.result_s3_key = result['result_s3_key']
-                analysis.completed_at = datetime.utcnow()
-            else:
-                analysis.status = AnalysisStatus.FAILED
-                analysis.error_message = (
-                    result.get('error', 'Analysis task returned an invalid result')
-                    if isinstance(result, dict)
-                    else 'Analysis task returned an invalid result'
-                )
-            db.commit()
-
-        elif task.state == 'FAILURE':
-            analysis.status = AnalysisStatus.FAILED
-            analysis.error_message = str(task.info)
-            analysis.completed_at = datetime.utcnow()
-            db.commit()
-
         return {
             "analysis_id": str(analysis.id),
             "status": analysis.status.value,
@@ -190,6 +223,16 @@ async def list_analyses(
     db: Session = Depends(get_db)
 ):
     """List all analyses for current user"""
+    active_analyses = db.query(AnalysisDB).filter(
+        AnalysisDB.user_id == current_user_id,
+        AnalysisDB.status.in_([AnalysisStatus.PENDING, AnalysisStatus.RUNNING]),
+    ).all()
+    statuses_changed = False
+    for analysis in active_analyses:
+        statuses_changed = sync_analysis_status(analysis) or statuses_changed
+    if statuses_changed:
+        db.commit()
+
     analyses = db.query(AnalysisDB).filter(
         AnalysisDB.user_id == current_user_id
     ).offset(skip).limit(limit).all()

@@ -7,6 +7,11 @@ from app.core.auth import get_current_user_id
 from app.models.models import Dataset as DatasetDB
 from app.schemas.schemas import DatasetCreate, DatasetResponse, PresignedUrlResponse
 from app.services.storage import storage_service
+from app.services.file_names import dataset_download_filename, sanitize_filename
+from app.services.resource_cleanup import (
+    delete_related_analyses,
+    delete_storage_files,
+)
 from app.core.config import settings
 from starlette.concurrency import run_in_threadpool
 import pandas as pd
@@ -102,6 +107,7 @@ async def create_dataset(
             name=dataset.name,
             description=dataset.description,
             s3_key=s3_key,
+            original_filename=sanitize_filename(dataset.original_filename),
             file_size=file_size,
             num_rows=num_rows,
             num_columns=num_columns,
@@ -166,20 +172,18 @@ async def delete_dataset(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    # Check if dataset is used in analyses
-    analyses_count = db.query(Analysis).filter(Analysis.dataset_id == dataset_id).count()
-    if analyses_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete dataset: it is used in {analyses_count} analysis/analyses"
-        )
-
     try:
-        storage_service.delete_file(dataset.s3_key)
+        analyses = db.query(Analysis).filter(Analysis.dataset_id == dataset_id).all()
+        storage_keys = delete_related_analyses(db, analyses)
+        storage_keys.append(dataset.s3_key)
         db.delete(dataset)
         db.commit()
 
-        return {"message": "Dataset deleted successfully"}
+        delete_storage_files(storage_keys)
+        return {
+            "message": "Датасет удалён",
+            "deleted_analyses": len(analyses),
+        }
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete dataset: {str(e)}")
@@ -200,7 +204,15 @@ async def download_dataset(
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     try:
-        download_url = storage_service.generate_presigned_download_url(dataset.s3_key)
+        filename = dataset_download_filename(
+            dataset.name,
+            dataset.original_filename,
+        )
+        download_url = storage_service.generate_presigned_download_url(
+            dataset.s3_key,
+            filename=filename,
+            content_type="text/csv",
+        )
 
         # For local storage, return API endpoint instead of file path
         if settings.STORAGE_MODE == "local":
@@ -208,7 +220,7 @@ async def download_dataset(
 
         return {
             "download_url": download_url,
-            "filename": dataset.name,
+            "filename": filename,
             "file_size": dataset.file_size
         }
     except Exception as e:
@@ -237,10 +249,16 @@ async def download_file_direct(
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
 
+        filename = dataset_download_filename(
+            dataset.name,
+            dataset.original_filename,
+        )
         return FileResponse(
             path=file_path,
-            filename=dataset.name,
+            filename=filename,
             media_type='text/csv'
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")

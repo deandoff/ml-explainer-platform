@@ -43,7 +43,9 @@ class LocalStorageService:
     def generate_presigned_download_url(
         self,
         storage_key: str,
-        expires_in: int = 3600
+        expires_in: int = 3600,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
     ) -> str:
         """Generate local path for download"""
         return str(self._resolve_key(storage_key))

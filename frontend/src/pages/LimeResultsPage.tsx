@@ -106,10 +106,14 @@ const LimeResultsPage: React.FC = () => {
   const negativeFeatures = sortedFeatures.filter(([, value]) => (value as number) < 0);
 
   const predictedClass = predictionProba.indexOf(Math.max(...predictionProba));
+  const classLabels: string[] = Array.isArray(results.class_labels)
+    ? results.class_labels
+    : predictionProba.map((_: number, index: number) => `Класс ${index}`);
+  const getClassLabel = (index: number) => classLabels[index] ?? `Класс ${index}`;
+  const predictedClassLabel = getClassLabel(predictedClass);
   const confidence = Math.max(...predictionProba);
   const baselineProbability = Number(instanceData.explanation.intercept);
   const localPrediction = Number(instanceData.explanation.local_prediction);
-  const localFidelity = Math.max(0, Math.min(1, Number(instanceData.explanation.local_fidelity)));
   const approximationError = Math.abs(localPrediction - confidence);
 
   // Calculate prediction breakdown
@@ -123,7 +127,7 @@ const LimeResultsPage: React.FC = () => {
     const topPositive = positiveFeatures.slice(0, 2);
     const topNegative = negativeFeatures.slice(0, 2);
 
-    let explanation = `Модель предсказала класс ${predictedClass} с уверенностью ${(confidence * 100).toFixed(1)}%. `;
+    let explanation = `Модель предсказала «${predictedClassLabel}» с уверенностью ${(confidence * 100).toFixed(1)}%. `;
 
     if (topPositive.length > 0) {
       const mainFactors = topPositive.map(([name]) => formatFeatureName(name)).join(' и ');
@@ -147,48 +151,14 @@ const LimeResultsPage: React.FC = () => {
     return explanation;
   };
 
-  // Calculate trust score (0-100)
-  const calculateTrustScore = () => {
-    const totalContribution = Object.values(featureImportance).reduce((sum: number, val) => sum + Math.abs(val as number), 0);
-    const topContribution = sortedFeatures.slice(0, 3).reduce((sum: number, [, val]) => sum + Math.abs(val as number), 0);
-    const concentration = topContribution / totalContribution;
-
-    // Calculate dominant feature share
-    const dominantShare = sortedFeatures[0] ? Math.abs(sortedFeatures[0][1] as number) / totalContribution : 0;
-
-    const activeCount = Object.values(featureImportance).filter(v => Math.abs(v as number) > 0.001).length;
-    const trustScore = Math.round(localFidelity * 100);
-
-    let level = 'Низкая';
-    let color: 'error' | 'warning' | 'success' = 'error';
-    let message = '';
-
-    if (trustScore >= 80) {
-      level = 'Высокая';
-      color = 'success';
-      message = 'Локальная модель LIME хорошо приближает поведение исходной модели вокруг этого объекта.';
-    } else if (trustScore >= 50) {
-      level = 'Средняя';
-      color = 'warning';
-      message = 'Локальная модель LIME лишь частично приближает исходную модель; вклады следует интерпретировать с осторожностью.';
-    } else {
-      level = 'Низкая';
-      color = 'error';
-      message = 'Локальная модель LIME плохо приближает исходную модель для этого объекта; объяснение нельзя считать надежным.';
-    }
-
-    return {
-      score: trustScore,
-      level,
-      color,
-      message,
-      concentration: (concentration * 100).toFixed(1),
-      dominantShare: (dominantShare * 100).toFixed(1),
-      activeFeatures: activeCount
-    };
-  };
-
-  const trustInfo = calculateTrustScore();
+  const activeFeatures = Object.values(featureImportance)
+    .filter(value => Math.abs(value as number) > 0.001)
+    .length;
+  const totalAbsoluteContribution = sortedFeatures
+    .reduce((sum, [, value]) => sum + Math.abs(value as number), 0);
+  const dominantFeatureShare = totalAbsoluteContribution > 0 && sortedFeatures[0]
+    ? Math.abs(sortedFeatures[0][1] as number) / totalAbsoluteContribution
+    : 0;
 
   const renderTopFactor = (
     feature: string,
@@ -229,7 +199,7 @@ const LimeResultsPage: React.FC = () => {
       });
     }
 
-    if (trustInfo.activeFeatures > 15 && parseFloat(trustInfo.dominantShare) < 20) {
+    if (activeFeatures > 15 && dominantFeatureShare < 0.2) {
       warnings.push({
         severity: 'warning' as const,
         message: 'Многие признаки влияют почти одинаково. Предсказание может быть чувствительно к небольшим изменениям сразу нескольких признаков.'
@@ -290,7 +260,7 @@ const LimeResultsPage: React.FC = () => {
                   Итоговое предсказание
                 </Typography>
                 <Typography variant="h2" sx={{ my: 2, fontWeight: 'bold' }}>
-                  Класс {predictedClass}
+                  {predictedClassLabel}
                 </Typography>
                 <Typography variant="h6" sx={{ mb: 2 }}>
                   Уверенность: {(confidence * 100).toFixed(1)}%
@@ -304,7 +274,7 @@ const LimeResultsPage: React.FC = () => {
                 {predictionProba.map((prob: number, idx: number) => (
                   <Box key={idx} sx={{ mb: 1.5 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="body2">Класс {idx}</Typography>
+                      <Typography variant="body2">{getClassLabel(idx)}</Typography>
                       <Typography variant="body2" fontWeight="bold">{(prob * 100).toFixed(1)}%</Typography>
                     </Box>
                     <LinearProgress
@@ -554,80 +524,7 @@ const LimeResultsPage: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Section 6: Trust/Reliability - ENHANCED */}
-        <Card sx={{ mb: 3, borderTop: '3px solid #ff9800' }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom fontWeight="bold">
-              Оценка надежности объяснения
-            </Typography>
-            <Typography variant="body2" color="text.secondary" paragraph>
-              Насколько можно доверять этому объяснению?
-            </Typography>
-
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={3}>
-                <Paper sx={{ p: 3, textAlign: 'center', bgcolor: '#f5f5f5' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Оценка надежности</Typography>
-                  <Typography variant="h2" color={trustInfo.color} fontWeight="bold">
-                    {trustInfo.score}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">из 100</Typography>
-                  <Box sx={{ mt: 2 }}>
-                    <Chip
-                      label={trustInfo.level}
-                      color={trustInfo.color}
-                      sx={{ fontWeight: 'bold' }}
-                    />
-                  </Box>
-                </Paper>
-              </Grid>
-
-              <Grid item xs={12} md={3}>
-                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Активные признаки</Typography>
-                  <Typography variant="h3" color="primary" fontWeight="bold">
-                    {trustInfo.activeFeatures}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    из {Object.keys(featureImportance).length}
-                  </Typography>
-                </Paper>
-              </Grid>
-
-              <Grid item xs={12} md={3}>
-                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Доля трех лидеров</Typography>
-                  <Typography variant="h3" color="primary" fontWeight="bold">
-                    {trustInfo.concentration}%
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    от общего вклада
-                  </Typography>
-                </Paper>
-              </Grid>
-
-              <Grid item xs={12} md={3}>
-                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>Ведущий признак</Typography>
-                  <Typography variant="h3" color="primary" fontWeight="bold">
-                    {trustInfo.dominantShare}%
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    доля одного признака
-                  </Typography>
-                </Paper>
-              </Grid>
-            </Grid>
-
-            <Alert severity={trustInfo.color} sx={{ mt: 3 }} icon={<InfoIcon />}>
-              <Typography variant="body2" fontWeight="medium">
-                {trustInfo.message}
-              </Typography>
-            </Alert>
-          </CardContent>
-        </Card>
-
-        {/* Section 7: LIME surrogate sensitivity illustration */}
+        {/* Section 6: LIME surrogate sensitivity illustration */}
         <Card sx={{ mb: 3, borderTop: '3px solid #9c27b0' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom fontWeight="bold">
@@ -772,13 +669,13 @@ const LimeResultsPage: React.FC = () => {
                       <>
                         <Box sx={{ mb: 3, p: 2, bgcolor: 'white', borderRadius: 1 }}>
                           <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Оценка локальной модели для класса {predictedClass}
+                            Оценка локальной модели для «{predictedClassLabel}»
                           </Typography>
                           <Typography variant="h3" color="primary" fontWeight="bold">
                             {(newProbability * 100).toFixed(1)}%
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            Объясняемый класс {predictedClass}
+                            Объясняемый результат: {predictedClassLabel}
                           </Typography>
                         </Box>
 

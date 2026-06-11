@@ -228,6 +228,18 @@ const AnalysisResultsPage: React.FC = () => {
 
   // Use filtered data if available, otherwise use original
   const displayData = filteredData || shapData;
+  const totalDatasetSamples = Number(
+    analysisResults?.num_samples ?? shapData?.n_samples ?? 0
+  );
+  const usesShapSample = Boolean(
+    shapData && totalDatasetSamples > shapData.n_samples
+  );
+  const explainedOutputLabel = analysisResults?.explained_output_label
+    ?? (
+      typeof analysisResults?.explained_output === 'number'
+        ? `Класс ${analysisResults.explained_output}`
+        : 'Выход модели'
+    );
   const featureImportanceMax = displayData
     ? Math.max(...Object.values(displayData.feature_importance).map(item => item.mean_abs_shap))
     : 0;
@@ -263,7 +275,7 @@ const AnalysisResultsPage: React.FC = () => {
           </Typography>
           {shapData && (
             <Typography variant="body2" color="text.secondary">
-              Объектов: {shapData.n_samples} • Признаков: {shapData.n_features} • Метод: SHAP
+              В датасете: {totalDatasetSamples} • В SHAP-выборке: {shapData.n_samples} • Признаков: {shapData.n_features} • Объясняется: {explainedOutputLabel}
             </Typography>
           )}
         </Box>
@@ -285,6 +297,14 @@ const AnalysisResultsPage: React.FC = () => {
           </Button>
         </Box>
       </Box>
+
+      {shapData && usesShapSample && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          SHAP рассчитан по случайной выборке из {shapData.n_samples} объектов
+          из {totalDatasetSamples}. Метрики качества и матрица ошибок рассчитаны
+          по всему датасету.
+        </Alert>
+      )}
 
       {/* Filter Panel (collapsible) */}
       <FilterPanel
@@ -308,7 +328,7 @@ const AnalysisResultsPage: React.FC = () => {
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">Среднее предсказание</Typography>
+              <Typography variant="body2" color="text.secondary">Среднее в SHAP-выборке</Typography>
               <Typography variant="h6">
                 {displayData.summary_stats.prediction_mean.toFixed(4)}
               </Typography>
@@ -316,7 +336,7 @@ const AnalysisResultsPage: React.FC = () => {
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">Диапазон предсказаний</Typography>
+              <Typography variant="body2" color="text.secondary">Диапазон в SHAP-выборке</Typography>
               <Typography variant="h6">
                 {displayData.summary_stats.prediction_min.toFixed(2)} - {displayData.summary_stats.prediction_max.toFixed(2)}
               </Typography>
@@ -325,7 +345,7 @@ const AnalysisResultsPage: React.FC = () => {
           <Grid item xs={12} sm={6} md={3}>
             <Paper sx={{ p: 2, textAlign: 'center', bgcolor: activeFiltersCount > 0 ? 'rgba(25, 118, 210, 0.08)' : 'white' }}>
               <Typography variant="body2" color="text.secondary">
-                {activeFiltersCount > 0 ? 'Объектов после фильтрации' : 'Всего объектов'}
+                {activeFiltersCount > 0 ? 'Объектов после фильтрации' : 'Объектов в SHAP-выборке'}
               </Typography>
               <Typography variant="h6" color={activeFiltersCount > 0 ? 'primary.main' : 'inherit'}>
                 {displayData.n_samples} {shapData && activeFiltersCount > 0 && `/ ${shapData.n_samples}`}
@@ -478,7 +498,6 @@ const AnalysisResultsPage: React.FC = () => {
       {dependencePlotOpen && selectedFeature && displayData && analysisId && (
         <Box id="dependence-plot-section" sx={{ mt: 3 }}>
           <InlineDependencePlot
-            analysisId={analysisId}
             featureName={selectedFeature}
             shapData={displayData}
             onClose={handleCloseDependencePlot}
